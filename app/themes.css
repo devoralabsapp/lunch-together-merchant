@@ -31,3 +31,5 @@ html[data-theme]:not([data-theme=retro]) .date-label{background:var(--surface);c
 .menu-publication-hint{margin:16px 0 0;font-size:13px;line-height:1.7}
 
 .menu-offer-editor .table-wrap{margin:20px 0}
+
+.restaurant-team .table-wrap{position:relative;max-width:100%}.restaurant-team td:first-child strong{overflow-wrap:anywhere}

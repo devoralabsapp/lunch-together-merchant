@@ -76,3 +76,7 @@ Thực đơn đồng bộ dùng form/bảng Sửa/Bỏ món như thực đơn c�
 ## Thực đơn cơ sở dùng lại hằng ngày
 
 Bỏ màn Thực đơn đồng bộ Cơm Nhà, giữ một bảng Thực đơn riêng của cơ sở có nút Đăng thực đơn. Mỗi bản đã đăng có hiệu lực từ ngày được chọn, dùng tiếp cho các ngày sau tới bản đăng mới. Dùng offers hiện có, truy vấn date <= ngày phục vụ rồi giảm dần/limit 1; bản tương lai không lùi về quá khứ. Sửa món chỉ là bản nháp cho tới khi đăng. Giữ snapshot ngày và giá đơn cũ, đồng bộ đúng ngày đã gắn nếu đăng cho ngày đó. Không đổi Rules hoặc quyền tài chính. Xem docs/REUSABLE-BRANCH-MENU.md.
+
+## Nhân sự chung theo nhà hàng
+
+Gộp nhân sự các cơ sở cùng ownerId vào một tab, bỏ chọn cơ sở/ngày. Giữ quyền cũ cho đến khi quản trị/chủ nhà hàng lưu lại quyền chung trong merchantTeamUsers; quyền chung áp dụng cả cơ sở mới và khi khóa phải chặn fallback quyền cũ. Chủ nhà hàng bất biến, chỉ quản trị cấp/đổi vai trò owner, không tự chỉnh quyền của mình. Tìm bằng UID hoặc email Google đã xác minh trong merchantEmailDirectory, chỉ get đúng hash email, cấm list; người dùng phải được duyệt trước. Không dùng Admin SDK/khóa riêng hoặc mở hồ sơ riêng tư. Xem docs/RESTAURANT-TEAM.md.

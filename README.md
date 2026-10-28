@@ -79,3 +79,5 @@ Shared catalog and direct publication: [data model, migration policy and flow](d
 ## Reusable branch menu update
 
 Daily menu now has one Branch menu panel with Publish menu. The latest published menu is reused every day from its effective date until changed. The separate shared-menu panel is removed. See [reusable branch menu](docs/REUSABLE-BRANCH-MENU.md) for current behavior and compatibility.
+
+Restaurant-wide staff: [UID/email lookup, unified roles and legacy compatibility](docs/RESTAURANT-TEAM.md). Team has no date/branch controls; existing staff are deduplicated and new saves apply across current and future branches. Publish the matching configured shared Rules before operational use.
