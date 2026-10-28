@@ -42,8 +42,8 @@ Fill the Firebase Web configuration from the **same** project as Lunch Together.
 1. Deploy the matching customer integration and publish the complete shared Firestore Rules from the customer application. The reference [integration/firestore.rules](integration/firestore.rules) uses `PRIMARY_ADMIN_UID_HERE`; preserve the existing operator's primary UID before publishing. Do not replace live Rules with an unconfigured placeholder or a merchant-only fragment.
 2. Add the merchant production hostname to Firebase Authentication → Settings → Authorized domains. Google sign-in must already be enabled.
 3. Sign in with an existing Lunch Together administrator. Create a restaurant and optionally assign an initial owner UID. New Google users sign in, complete registration and wait for **Merchant approvals / Phê duyệt Merchant**. Approved owners can create additional stores themselves.
-4. Select a date and click **Link this day**. Each date has one immutable restaurant assignment. Existing days/orders are retained; linking a day does not change its menu, orders or payments.
-5. Add catalog dishes and publish a daily menu. Managers/owners can create an `auto` day or update its menu; only the customer administrator controls opening/closing.
+4. Add shared catalog dishes and publish a daily menu for the selected branch/date. Publication does not require a customer date assignment.
+5. In Lunch Together, an administrator creates a meal day and selects the restaurant and its published offer. Each date has one immutable assignment. Subsequent publication synchronizes that menu; only the customer administrator controls opening/closing.
 6. Customers order in Lunch Together. The restaurant receives live changes and updates preparation/delivery status. Kitchen staff can change cooking/ready steps; managers/owners accept and deliver.
 
 New merchant collections do not require a composite index. A regular customer administrator and an owner are different roles. Global customer administrators can manage all restaurants; a staff identity can have different scoped roles at multiple restaurants.
