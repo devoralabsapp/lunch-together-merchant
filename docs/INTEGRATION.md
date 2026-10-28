@@ -5,15 +5,15 @@
 Regular customer and merchant accounts use one portal each. Membership existence
 reserves a Google UID for Merchant, including disabled membership. Only verified
 Google administrators may use both portals. Admission checks run before showing
-the workspace; unauthorized sessions are signed out locally. Shared operational
+the workspace; unapproved users see registration/status only; unauthorized operational sessions are refused. Shared operational
 reads remain scoped to assigned meal days. See [portal account policy](PORTAL-ACCESS.md).
 
 Both applications use Firebase Web SDK and the same Standard database. There is no replication queue or new trusted server identity. Existing `admins/{uid}` remains the customer administrator authority; merchant membership does not make a person a customer administrator.
 
 | Path | Reader / writer |
 | --- | --- |
-| `merchants/{id}` | Authenticated customers may get public restaurant details; only administrators list restaurants. Managers/owners edit details; only administrators toggle active state. |
-| `merchantUsers/{uid}` | Verified Google identity reads its own mapping. Owners query their own restaurant's staff. Administrators provision owners; owners manage lower roles. No self-escalation or reassignment. |
+| `merchants/{id}` | Authenticated customers may get public restaurant details; administrators list all restaurants; approved owners query their own ownerId. Managers/owners edit details; only administrators toggle active state. |
+| `merchantUsers/{uid}` | Verified Google identity reads its own root mapping. Administrator approval writes an accountOnly marker; legacy mappings remain supported. Root identity reserves the operational portal. |
 | `merchantDays/{dayId}` | Customer administrator creates an immutable `{merchantId,date,createdAt,createdBy}` binding. Staff list only their own merchant's bindings. Customers may get a selected day's binding. |
 | `merchants/{id}/catalog/{dishId}` | Merchant staff read; managers/owners edit. Name hash, price and active schema match customer dishes. Archive instead of delete. |
 | `days/{dayId}` and `dishes/{dishId}` | Existing schema. Merchant managers/owners write menus only for bound days; new days must be `auto`, and existing opening/closing status cannot be changed by merchant roles. |
@@ -43,4 +43,8 @@ No customer identity, UID, paid flag, credit balance or refund history is export
 
 ## Deliberate first-version boundaries
 
-One restaurant assignment per meal date, one merchant membership per staff UID. Bindings cannot be reassigned or deleted. Customer administrators may control multiple merchants. No inventory/POS, tax accounting, merchant payment settlement, restaurant-to-restaurant order transfer or automatic acceptance is implemented. These would require separately reviewed data models and permissions.
+One restaurant assignment per meal date. Owners can create multiple stores; staff can hold different per-store roles. Bindings cannot be reassigned or deleted. Customer administrators may control multiple merchants. No inventory/POS, tax accounting, merchant payment settlement, restaurant-to-restaurant order transfer or automatic acceptance is implemented. These would require separately reviewed data models and permissions.
+
+## Approval and branch extension
+
+See [approval and branches](APPROVAL-AND-BRANCHES.md). merchantApplications/{uid} stores self-owned pending applications; merchantApprovalEvents/{id} stores administrator-only immutable paired verdicts. merchantStoreUsers/{merchantId}~{uid} grants access at each store. merchants/{id}/menus/{date}/dishes/{id} holds private per-branch menus; managers explicitly publish a saved branch menu into a bound customer day. No cross-branch menu replication occurs. Existing financial authorization and legacy grants remain unchanged.

@@ -1,6 +1,6 @@
 # Lunch Together Merchant
 
-A dedicated restaurant workspace for [Lunch Together / Cơm Nhà](https://github.com/devoralabsapp/lunch-together). Both applications use the same Firebase Authentication project and Firestore **Standard** database. Vietnamese is the default interface; English is available in the language selector.
+A dedicated restaurant workspace for [Lunch Together / Cơm Nhà](https://github.com/devoralabsapp/lunch-together). Both applications use the same Firebase Authentication project and Firestore **Standard** database. New Google users await administrator approval before opening stores. Approved accounts manage multiple branches, individual menus and scoped staff. Vietnamese and Retro are the defaults; English and six selectable themes are included.
 
 ![Kitchen workspace with fictional emulator data](docs/images/kitchen.vi.jpg)
 
@@ -8,19 +8,20 @@ A dedicated restaurant workspace for [Lunch Together / Cơm Nhà](https://github
 
 [Open the merchant application](https://lunchtogether-merchant.devoralabs.tech/) · [Implementation prompt](PROMPT.vi.md)
 
-Regular Google accounts belong to one portal: an assigned merchant account uses
-Merchant, and a customer account uses Lunch Together. Only verified customer
-administrators can enter both. An unassigned or disabled account is signed out
-of Merchant before any workspace loads; its UID remains available to copy for
-administrator onboarding. Disabled memberships never become customer accounts.
-See [portal access](docs/PORTAL-ACCESS.md) for the shared Rules and account policy.
+Regular Google accounts belong to one operational portal. A new Merchant login
+opens a registration/status screen; only approval unlocks store operations.
+Approval switches an ordinary customer account to Merchant. Only verified customer
+administrators operate both. Suspended memberships never become customer accounts.
+See [approval, branches and themes](docs/APPROVAL-AND-BRANCHES.md) for setup and policy.
 
 ## Features
 
 - Daily operational dashboard, real-time aggregated kitchen orders, counted preparation notes and print-ready kitchen lists.
 - Restaurant dish catalog and daily menus written directly into the existing customer day/menu collections. Original order prices and financial records are preserved.
 - Accepted → cooking → ready → delivering → completed workflow, with role checks and immutable activity events. Changed orders require acknowledgment again; payment-only updates do not reset kitchen acknowledgment.
-- Owner, manager and kitchen roles; restaurant profile and staff access management by Google UID.
+- Administrator-reviewed registration, approval feedback, suspension and restoration.
+- Multiple owned stores, per-branch dated menus and per-store owner/manager/kitchen roles. One person can work at multiple branches.
+- Classic, Command Line, Visual Studio Code, Excel, Midnight and Playful Retro Neo-Brutalism themes, with Vietnamese/English copy and retained preferences.
 - An isolated, clearly labeled demo that never writes to Firebase. Compatible restaurant-v1 JSON export.
 - The customer app receives the restaurant's preparation/delivery status and changed-order warning.
 
@@ -40,12 +41,12 @@ Fill the Firebase Web configuration from the **same** project as Lunch Together.
 
 1. Deploy the matching customer integration and publish the complete shared Firestore Rules from the customer application. The reference [integration/firestore.rules](integration/firestore.rules) uses `PRIMARY_ADMIN_UID_HERE`; preserve the existing operator's primary UID before publishing. Do not replace live Rules with an unconfigured placeholder or a merchant-only fragment.
 2. Add the merchant production hostname to Firebase Authentication → Settings → Authorized domains. Google sign-in must already be enabled.
-3. Sign in with an existing Lunch Together administrator. Create a restaurant and optionally assign an initial owner UID. A Google account can sign in first and copy its UID even before being assigned.
+3. Sign in with an existing Lunch Together administrator. Create a restaurant and optionally assign an initial owner UID. New Google users sign in, complete registration and wait for **Merchant approvals / Phê duyệt Merchant**. Approved owners can create additional stores themselves.
 4. Select a date and click **Link this day**. Each date has one immutable restaurant assignment. Existing days/orders are retained; linking a day does not change its menu, orders or payments.
 5. Add catalog dishes and publish a daily menu. Managers/owners can create an `auto` day or update its menu; only the customer administrator controls opening/closing.
 6. Customers order in Lunch Together. The restaurant receives live changes and updates preparation/delivery status. Kitchen staff can change cooking/ready steps; managers/owners accept and deliver.
 
-New merchant collections do not require a composite index. A regular customer administrator and an owner are different roles. Global customer administrators can manage all restaurants; a regular staff identity belongs to one restaurant in this version.
+New merchant collections do not require a composite index. A regular customer administrator and an owner are different roles. Global customer administrators can manage all restaurants; a staff identity can have different scoped roles at multiple restaurants.
 
 ## Deployment
 
@@ -65,7 +66,7 @@ Model tests cover counted notes, v1 snapshot compatibility, normalized dish IDs,
 
 Ứng dụng riêng cho nhà hàng, dùng chung Firebase với Cơm Nhà. Đăng thực đơn từ merchant sẽ cập nhật đúng ngày bên Cơm Nhà; đơn khách đặt/sửa/hủy được cập nhật về bếp. Trạng thái chuẩn bị/giao cơm được gửi ngược lại. Số lượng ghi chú được tính theo suất; không hiện dòng cho suất không có ghi chú. Không cấp thêm quyền thay đổi tiền của khách cho nhà hàng.
 
-Quản trị Cơm Nhà tạo nhà hàng và liên kết ngày, sau đó cấp chủ/quản lý/nhà bếp theo UID Google. Cần Publish Rules tương thích và thêm hostname merchant vào Authorized domains. Demo dùng dữ liệu giả và không lưu thay đổi.
+Người mới đăng nhập Google chờ quản trị duyệt tại **Phê duyệt Merchant**. Sau khi duyệt có thể tạo nhiều cơ sở và thực đơn riêng; quản trị vẫn liên kết ngày để nhận đơn Cơm Nhà. Nhân sự được cấp quyền riêng theo từng cơ sở. Cần Publish Rules tương thích và thêm hostname merchant vào Authorized domains. Demo dùng dữ liệu giả và không lưu thay đổi.
 
 ## License
 
