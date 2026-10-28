@@ -1,0 +1,6 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {aggregateRestaurantTeam} from '../lib/restaurant-team';import {normalizeMerchantEmail} from '../lib/merchant-directory';
+test('restaurant staff aggregation deduplicates identities without migrating or expanding legacy grants',()=>{
+ const legacy=[{id:'sample-a',merchantId:'branch-a',role:'manager' as const,enabled:true},{id:'sample-a',merchantId:'branch-b',role:'kitchen' as const,enabled:false},{id:'sample-b',merchantId:'branch-b',role:'kitchen' as const,enabled:true}];const items=aggregateRestaurantTeam(legacy,[],'sample-owner');assert.equal(items.length,3);const a=items.find(i=>i.uid==='sample-a')!;assert.equal(a.scope,'legacy');assert.equal(a.enabled,true);assert.deepEqual(a.roles,['manager','kitchen']);assert.equal(a.role,'kitchen');assert.equal(legacy[1].enabled,false);
+ const updated=aggregateRestaurantTeam(legacy,[{uid:'sample-a',email:'sample@example.test',role:'manager',enabled:false}],'sample-owner').find(i=>i.uid==='sample-a')!;assert.equal(updated.scope,'restaurant');assert.equal(updated.enabled,false);assert.equal(updated.email,'sample@example.test');
+});
+test('merchant email lookup trims whitespace and normalizes case without rewriting a UID',()=>{assert.equal(normalizeMerchantEmail('  Staff@Example.Test  '),'staff@example.test');});

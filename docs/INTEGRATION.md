@@ -59,3 +59,7 @@ See [shared catalog and published menus](SHARED-CATALOG-AND-MENUS.md) for the ca
 ## Reusable branch menu update
 
 Daily menu now has one Branch menu panel with Publish menu. The latest published menu is reused every day from its effective date until changed. The separate shared-menu panel is removed. See [reusable branch menu](REUSABLE-BRANCH-MENU.md) for current behavior and compatibility.
+
+## Restaurant-wide staff extension
+
+merchantTeamUsers stores restaurant-wide grants; merchantEmailDirectory supports exact verified-email lookup without enumeration. Explicit shared grants override legacy scoped membership, including revocation. See [restaurant-wide staff](RESTAURANT-TEAM.md) for schema, migration boundaries, permissions and setup.

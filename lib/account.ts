@@ -1,5 +1,6 @@
 import type {User} from 'firebase/auth';
 import {doc,getDoc,runTransaction,serverTimestamp,type Firestore} from 'firebase/firestore';
+import {ensureMerchantDirectory} from './merchant-directory';
 import type {Member} from './model';
 export type Application={id:string;email:string;displayName:string;businessName:string;phone:string;note:string;status:'pending'|'approved'|'rejected'|'disabled';createdAt?:unknown;updatedAt?:unknown;reviewedBy:string;reviewedAt?:unknown;reviewNote:string;reviewEventId:string};
 export type Access={admin:boolean;member:Member|null;application:Application|null;blocked:boolean;canOperate:boolean;canCreate:boolean};
@@ -16,5 +17,6 @@ export async function readAccount(user:User,db:Firestore){
 export async function initializeMerchantAccount(user:User,db:Firestore){
  let access=await readAccount(user,db);if(access.blocked&&!access.admin)throw Error('Tài khoản đang bị khóa. Vui lòng liên hệ quản trị.');
  if(!access.admin&&!access.member&&!access.application){const ref=doc(db,'merchantApplications',user.uid);await runTransaction(db,async tx=>{if((await tx.get(ref)).exists())return;tx.set(ref,{email:user.email||'',displayName:(user.displayName||'').slice(0,100),businessName:'',phone:'',note:'',status:'pending',createdAt:serverTimestamp(),updatedAt:serverTimestamp(),reviewedBy:'',reviewedAt:null,reviewNote:'',reviewEventId:''});});access=await readAccount(user,db);}
+ if(access.canOperate&&access.member?.enabled)await ensureMerchantDirectory(user,db);
  return access;
 }
