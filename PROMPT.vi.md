@@ -62,3 +62,7 @@ days/{dayId}/orders/{existingOrderId}
 Tự quyết các chi tiết triển khai thường lệ để hoàn thành sản phẩm; báo lại các quyết định ảnh hưởng dữ liệu, quyền hoặc vận hành. Không mở rộng sang thanh toán merchant, kho nguyên liệu, thuế hay kế toán nếu chưa được yêu cầu.
 
 Thực đơn riêng của từng cơ sở có thể lưu cùng ngày với món/giá khác nhau. Chỉ công bố thực đơn sang ngày khách sau khi quản trị liên kết đúng cơ sở. Quyền sở hữu bất biến, nhân sự chỉ được cấp cho tài khoản đã duyệt; tạm ngừng không tự chuyển người dùng về portal khách.
+
+## Cập nhật quản lý cửa hàng và tạo ngày
+
+Menu Merchant desktop ở bên trái, bộ chọn nhà hàng cạnh ngày và giữ ngày khi đổi cơ sở. Tab Cửa hàng là danh sách chung có thêm/sửa/xóa vào lưu trữ/khôi phục, không có ô ngày hoặc cảnh báo liên kết. Thực đơn cơ sở dùng form/bảng như Danh mục món. Cơm Nhà tạo ngày mới có Nhập thủ công hoặc Liên kết nhà hàng; nhánh liên kết lấy thực đơn đúng ngày đã lưu và tạo ngày/menu/liên kết/nhật ký nguyên tử, chặn ngày trùng và cửa hàng ngừng hoạt động. Xem docs/STORES-AND-MEAL-DAYS.md.

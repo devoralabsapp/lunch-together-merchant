@@ -50,6 +50,10 @@ export async function saveMerchant(merchant:Merchant,input:{name:string;phone:st
  const {db}=firebase(),e=event(merchant.id,'merchant.update','Cập nhật thông tin nhà hàng');
  await runTransaction(db,async tx=>{const s=await tx.get(doc(db,'merchants',merchant.id));if(!s.exists())throw Error('Không tìm thấy nhà hàng.');tx.update(s.ref,{name:input.name.trim(),phone:input.phone.trim(),address:input.address.trim(),updatedAt:serverTimestamp(),updatedBy:actor()});tx.set(e.ref,e.data);});
 }
+export async function archiveMerchant(merchantId:string,archived:boolean){
+ const {db}=firebase(),uid=actor(),e=event(merchantId,'merchant.update',archived?'Lưu trữ cửa hàng':'Khôi phục cửa hàng');
+ await runTransaction(db,async tx=>{const ref=doc(db,'merchants',merchantId),s=await tx.get(ref);if(!s.exists())throw Error('Không tìm thấy nhà hàng.');tx.update(ref,{archived,active:!archived,updatedAt:serverTimestamp(),updatedBy:uid});tx.set(e.ref,e.data);});
+}
 export async function saveDish(merchantId:string,item:{name:string;price:number;active:boolean}){
  const [clean]=validMenu([item]),{db}=firebase(),id=await dishId(clean.name),e=event(merchantId,'catalog.save',(item.active?'Lưu món: ':'Ngừng món: ')+clean.name);
  await runTransaction(db,async tx=>{tx.set(doc(db,'merchants',merchantId,'catalog',id),{...clean,active:item.active,updatedAt:serverTimestamp()});tx.set(e.ref,e.data);});
@@ -94,6 +98,6 @@ export async function reviewApplication(application:Application,status:'approved
 }
 export async function readBranchMenu(merchantId:string,date:string){const {db}=firebase(),ref=doc(db,'merchants',merchantId,'menus',date),header=await getDoc(ref);if(!header.exists())return {revision:'',items:[] as Dish[]};const dishes=await getDocs(query(collection(ref,'dishes'),where('active','==',true)));return {revision:time(header.data().updatedAt),items:rows<Dish>(dishes)};}
 export async function saveBranchMenu(merchantId:string,date:string,items:Pick<Dish,'name'|'price'>[],expected:string){
- if(!validDate(date))throw Error('Ngày chưa hợp lệ.');const menu=validMenu(items),{db}=firebase(),ref=doc(db,'merchants',merchantId,'menus',date),previous=await getDoc(ref),old=previous.exists()?await getDocs(query(collection(ref,'dishes'),where('active','==',true))):null,ids=await Promise.all(menu.map(i=>dishId(i.name))),e=event(merchantId,'branch.menu','Lưu thực đơn cơ sở '+date);
+ if(!validDate(date))throw Error('Ngày chưa hợp lệ.');const menu=items.length?validMenu(items):[],{db}=firebase(),ref=doc(db,'merchants',merchantId,'menus',date),previous=await getDoc(ref),old=previous.exists()?await getDocs(query(collection(ref,'dishes'),where('active','==',true))):null,ids=await Promise.all(menu.map(i=>dishId(i.name))),e=event(merchantId,'branch.menu','Lưu thực đơn cơ sở '+date);
  await runTransaction(db,async tx=>{const header=await tx.get(ref);if(time(header.data()?.updatedAt)!==expected)throw Error('Thực đơn vừa thay đổi ở thiết bị khác. Tải lại danh sách rồi thử lại.');tx.set(ref,{date,menuCount:menu.length,updatedAt:serverTimestamp(),updatedBy:actor()});for(const d of old?.docs||[])if(!ids.includes(d.id))tx.update(d.ref,{active:false,updatedAt:serverTimestamp()});menu.forEach((item,i)=>tx.set(doc(ref,'dishes',ids[i]),{...item,active:true,updatedAt:serverTimestamp()}));tx.set(e.ref,e.data);});
 }
