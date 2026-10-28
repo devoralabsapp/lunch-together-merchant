@@ -29,3 +29,5 @@ html[data-theme]:not([data-theme=retro]) .date-label{background:var(--surface);c
 .branch-menu h2{display:flex;align-items:center;gap:8px}
 
 .menu-publication-hint{margin:16px 0 0;font-size:13px;line-height:1.7}
+
+.menu-offer-editor .table-wrap{margin:20px 0}

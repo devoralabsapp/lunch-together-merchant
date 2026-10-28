@@ -15,7 +15,10 @@ Both applications use Firebase Web SDK and the same Standard database. There is 
 | `merchants/{id}` | Authenticated customers may get public restaurant details; administrators list all restaurants; approved owners query their own ownerId. Managers/owners edit details; only administrators toggle active state. |
 | `merchantUsers/{uid}` | Verified Google identity reads its own root mapping. Administrator approval writes an accountOnly marker; legacy mappings remain supported. Root identity reserves the operational portal. |
 | `merchantDays/{dayId}` | Customer administrator creates an immutable `{merchantId,date,createdAt,createdBy}` binding. Staff list only their own merchant's bindings. Customers may get a selected day's binding. |
-| `merchants/{id}/catalog/{dishId}` | Merchant staff read; managers/owners edit. Name hash, price and active schema match customer dishes. Archive instead of delete. |
+| `merchantCatalogs/{businessId}` and nested `dishes`, `imports` | Shared by immutable ownerId; live assigned staff read, owners/managers edit initialized dishes, owner/admin migrate. See shared catalog contract. |
+| `merchantCatalogAccess/{businessId}~{uid}` | Self-owned branch witness; every operation revalidates actual membership and business. No stored role authority. |
+| `merchants/{id}/catalog/{dishId}` | Legacy per-branch source retained for migration; new UI writes the shared catalog. |
+| `merchants/{id}/offers/{date}` and nested `dishes` | Staff/admin read; owner/manager/admin publish independent of customer date assignment. Child writes require paired header revision. |
 | `days/{dayId}` and `dishes/{dishId}` | Existing schema. Merchant managers/owners write menus only for bound days; new days must be `auto`, and existing opening/closing status cannot be changed by merchant roles. |
 | `days/{dayId}/orders/{orderId}` | Existing customer ownership, financial validation and shared visibility remain unchanged. The merchant UI projects only preparation fields. No merchant payment authority is added. |
 | `merchantFulfillments/{dayId}` | Authenticated customers read. Merchant roles update ordered steps with a paired immutable event. Manager/owner acknowledgment is required after changed operational instructions. |
@@ -47,6 +50,8 @@ One restaurant assignment per meal date. Owners can create multiple stores; staf
 
 ## Approval and branch extension
 
-See [approval and branches](APPROVAL-AND-BRANCHES.md). merchantApplications/{uid} stores self-owned pending applications; merchantApprovalEvents/{id} stores administrator-only immutable paired verdicts. merchantStoreUsers/{merchantId}~{uid} grants access at each store. merchants/{id}/menus/{date}/dishes/{id} holds private per-branch menus; managers explicitly publish a saved branch menu into a bound customer day. No cross-branch menu replication occurs. Existing financial authorization and legacy grants remain unchanged.
+See [approval and branches](APPROVAL-AND-BRANCHES.md). merchantApplications/{uid} stores self-owned pending applications; merchantApprovalEvents/{id} stores administrator-only immutable paired verdicts. merchantStoreUsers/{merchantId}~{uid} grants access at each store. merchants/{id}/menus/{date}/dishes/{id} holds private per-branch menus. Managers publish an explicit selection as a dated offer; if assigned, it also updates the customer menu atomically. Private branch menus stay independent; shared catalog dishes belong to the restaurant business. Existing financial authorization and legacy grants remain unchanged.
 
 The store directory adds optional archived:boolean to merchants (true requires active=false). Owners/admins archive/restore; hard deletion remains denied. Private branch menus accept 0..60 items; customer published menus retain 1..60. Customer-admin linked creation is an atomic day/menu/binding/audit snapshot. See [store and meal-day flow](STORES-AND-MEAL-DAYS.md).
+
+See [shared catalog and published menus](SHARED-CATALOG-AND-MENUS.md) for the canonical model, automatic legacy import and offer-first customer selection. Private branch menus remain independent.

@@ -66,3 +66,9 @@ Thực đơn riêng của từng cơ sở có thể lưu cùng ngày với món/
 ## Cập nhật quản lý cửa hàng và tạo ngày
 
 Menu Merchant desktop ở bên trái, bộ chọn nhà hàng cạnh ngày và giữ ngày khi đổi cơ sở. Tab Cửa hàng là danh sách chung có thêm/sửa/xóa vào lưu trữ/khôi phục, không có ô ngày hoặc cảnh báo liên kết. Thực đơn cơ sở dùng form/bảng như Danh mục món. Cơm Nhà tạo ngày mới có Nhập thủ công hoặc Liên kết nhà hàng; nhánh liên kết lấy thực đơn đúng ngày đã lưu và tạo ngày/menu/liên kết/nhật ký nguyên tử, chặn ngày trùng và cửa hàng ngừng hoạt động. Xem docs/STORES-AND-MEAL-DAYS.md.
+
+## Danh mục chung và đăng thực đơn trực tiếp
+
+Danh mục món dùng chung giữa các cơ sở cùng ownerId bất biến; không gộp khác chủ. Chủ/quản trị tự động gộp catalog cũ một lần, giữ dữ liệu cũ; món trùng tên dùng bản cập nhật mới nhất ban đầu, các lần sau giữ chỉnh sửa trong danh mục chung. Quản lý sửa món sau khởi tạo; bếp chỉ đọc. Mọi truy cập kiểm tra quyền thành viên hiện tại.
+
+Thực đơn đồng bộ dùng form/bảng Sửa/Bỏ món như thực đơn cơ sở. Nút Đăng thực đơn lưu offers theo cơ sở/ngày ngay, không cần liên kết trước. Cơm Nhà ưu tiên offers khi tạo ngày liên kết, fallback thực đơn cơ sở cũ. Khi đã gắn đúng cơ sở, đăng cập nhật offer và menu khách nguyên tử; không đổi liên kết, đơn cũ hay tiền. Xem docs/SHARED-CATALOG-AND-MENUS.md.

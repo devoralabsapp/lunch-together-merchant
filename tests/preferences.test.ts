@@ -8,7 +8,7 @@ test('pending/rejected accounts see registration only; approved and legacy ident
  assert.equal(accountAccess(false,{...marker,enabled:false},app('approved'),false).canOperate,false);assert.equal(accountAccess(false,null,app('approved'),false).canCreate,false);
 });
 test('visible Vietnamese UI strings and SDK errors have English copy while entered menu content remains untouched',()=>{
- const missing=new Set<string>();for(const file of ['app/dashboard.tsx','app/account-views.tsx','app/stores-panel.tsx','app/theme-provider.tsx','lib/theme.ts','lib/account.ts','lib/model.ts']){
+ const missing=new Set<string>();for(const file of ['app/dashboard.tsx','app/account-views.tsx','app/menu-offer-editor.tsx','lib/restaurant-catalog.ts','lib/menu-offer.ts','app/stores-panel.tsx','app/theme-provider.tsx','lib/theme.ts','lib/account.ts','lib/model.ts']){
   const ast=ts.createSourceFile(file,fs.readFileSync(file,'utf8'),ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);function visit(n:ts.Node){if(ts.isStringLiteral(n)&&/[\u00c0-\u024f\u1e00-\u1eff]/u.test(n.text)&&!english[n.text])missing.add(n.text);ts.forEachChild(n,visit);}visit(ast);
  }assert.deepEqual([...missing],[]);const t=translator('en');assert.equal(t('Đăng ký Merchant'),'Merchant registration');assert.equal(t('Cơm món riêng của khách'),'Cơm món riêng của khách');assert.notEqual(money(40000,'en'),money(40000,'vi'));assert.equal(translator('vi')('Đăng ký Merchant'),'Đăng ký Merchant');
 });
