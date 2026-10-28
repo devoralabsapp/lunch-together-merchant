@@ -70,3 +70,7 @@ nhan su bep chi xem. Moi co so van co thuc don rieng theo ngay.
 Dang thuc don luu ban cong bo ngay, khong can bam ket noi ngay truoc. Quan tri
 Com Nha chon nha hang va thuc don da dang khi tao ngay moi. Khi co so da duoc
 chon, Dang thuc don dong bo ngay; don cu va thong tin tien duoc giu nguyen.
+
+## Reusable branch menu update
+
+Daily menu now has one Branch menu panel with Publish menu. The latest published menu is reused every day from its effective date until changed. The separate shared-menu panel is removed. See [reusable branch menu](REUSABLE-BRANCH-MENU.md) for current behavior and compatibility.

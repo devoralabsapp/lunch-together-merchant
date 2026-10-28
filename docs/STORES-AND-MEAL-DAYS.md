@@ -52,3 +52,7 @@ lịch sử thay vì xóa vĩnh viễn. Thực đơn cơ sở hiển thị dạn
 Nhà hàng cần lưu thực đơn cơ sở cho đúng ngày trước khi quản trị tạo ngày liên kết.
 
 The catalog is shared across branches with the same immutable ownerId. Shared daily-menu rows use the same table pattern. Publication works before assignment; Lunch Together selects a published offer when creating a linked day. See [shared catalog and menus](SHARED-CATALOG-AND-MENUS.md) for the current flow.
+
+## Reusable branch menu update
+
+Daily menu now has one Branch menu panel with Publish menu. The latest published menu is reused every day from its effective date until changed. The separate shared-menu panel is removed. See [reusable branch menu](REUSABLE-BRANCH-MENU.md) for current behavior and compatibility.

@@ -55,3 +55,7 @@ See [approval and branches](APPROVAL-AND-BRANCHES.md). merchantApplications/{uid
 The store directory adds optional archived:boolean to merchants (true requires active=false). Owners/admins archive/restore; hard deletion remains denied. Private branch menus accept 0..60 items; customer published menus retain 1..60. Customer-admin linked creation is an atomic day/menu/binding/audit snapshot. See [store and meal-day flow](STORES-AND-MEAL-DAYS.md).
 
 See [shared catalog and published menus](SHARED-CATALOG-AND-MENUS.md) for the canonical model, automatic legacy import and offer-first customer selection. Private branch menus remain independent.
+
+## Reusable branch menu update
+
+Daily menu now has one Branch menu panel with Publish menu. The latest published menu is reused every day from its effective date until changed. The separate shared-menu panel is removed. See [reusable branch menu](REUSABLE-BRANCH-MENU.md) for current behavior and compatibility.

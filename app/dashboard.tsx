@@ -6,10 +6,10 @@ import {configured,firebase} from '../lib/firebase';
 import * as api from '../lib/client';
 import {customerOnlyMessage} from '../lib/portal-access';
 import {initializeMerchantAccount} from '../lib/account';
-import {Registration,Approvals,BranchMenu} from './account-views';
+import {Registration,Approvals} from './account-views';
 import {ThemeSwitcher} from './theme-provider';
 import StoresPanel,{CreateMerchant} from './stores-panel';
-import MenuOfferEditor from './menu-offer-editor';
+import BranchMenuEditor from './menu-offer-editor';
 import {watchRestaurantCatalog,saveRestaurantDish} from '../lib/restaurant-catalog';
 import {today,money,kitchenRows,states,orderFingerprint,canAdvance,snapshot,explain,type Role,type State,type Merchant,type Member,type Day,type Dish,type Order,type Binding,type Fulfillment,type Activity} from '../lib/model';
 import {demoMerchant,demoDishes,demoOrders} from '../lib/demo';
@@ -61,7 +61,7 @@ function MerchantWorkspace({merchant,merchants,onSelect,date,setDate,tab,setTab,
  {(tab==='overview'||tab==='kitchen')?<div className="metrics">{[[ClipboardList,'Lượt đặt',activeOrders.length,'Đơn cập nhật trực tiếp'],[UtensilsCrossed,'Suất cần chuẩn bị',quantity,'Bếp hôm nay'],[Store,'Giá trị đơn cơm',money(total,t.locale),'Không phải số tiền đã thu'],[BookOpen,'Món đang phục vụ',live.dishes.length,'Thực đơn theo ngày']].map(([Icon,label,value,sub],i)=>{const I=Icon as typeof Store;return <article className={'metric tone-'+i} key={String(label)}><I size={21}/><span>{t(String(label))}</span><strong>{value as React.ReactNode}</strong><small>{t(String(sub))}</small></article>;})}</div>:null}
  {tab==='overview'?<><section className="welcome"><div><span className="mini-tag">FROM MENU TO MEAL</span><h2>{t('Bếp hôm nay')}</h2><p>{t('Đơn mới từ Cơm Nhà tự cập nhật ở đây.')}</p><button className="ink" onClick={()=>setTab('kitchen')}>{t('Xem bếp')}<ArrowRight size={17}/></button></div><ChefHat size={112} strokeWidth={1}/></section><div className="overview-grid"><section className="panel"><h2>{t('Các ngày đã liên kết')}</h2>{data.bindings.length?data.bindings.slice(0,12).map(d=><button className="day-row" key={d.id} onClick={()=>{setDate(d.date);setTab('kitchen');}}><CalendarDays size={18}/><strong>{d.date}</strong><ArrowRight size={16}/></button>):<p>{t('Không tìm thấy dữ liệu')}</p>}</section><section className="panel"><h2>{t('Nhật ký gần đây')}</h2>{data.events.length?data.events.slice(0,6).map(e=><div className="event" key={e.id}><span className="event-dot"/><div><strong>{t(e.message)}</strong><small>{e.createdAt?new Date(e.createdAt).toLocaleString(t.locale==='en'?'en-GB':'vi-VN',{timeZone:'Asia/Ho_Chi_Minh'}):'…'}</small></div></div>):<p className="muted">{t('Chưa có hoạt động')}</p>}</section></div></>:null}
  {tab==='kitchen'?kitchen:null}
- {tab==='menu'?<><BranchMenu key={'branch-'+merchant.id+date} merchantId={merchant.id} date={date} catalog={data.catalog} enabled={canEdit} demo={demo} t={t}/><h2>{t('Thực đơn đồng bộ Cơm Nhà')}</h2><MenuOfferEditor key={'offer-'+merchant.id+date} merchantId={merchant.id} date={date} day={live.day} dishes={live.dishes} catalog={data.catalog} enabled={canEdit} linked={!!binding} demo={demo} busy={busy} run={run} t={t}/></>:null}
+ {tab==='menu'?<BranchMenuEditor key={'branch-'+merchant.id+date} merchantId={merchant.id} date={date} day={live.day} dishes={live.dishes} catalog={data.catalog} enabled={canEdit} demo={demo} busy={busy} run={run} t={t}/>:null}
  {tab==='catalog'?<Catalog merchant={merchant} items={data.catalog} editable={canEdit} busy={busy} run={run} t={t}/>:null}
  {tab==='team'&&canTeam?<Team merchantId={merchant.id} uid={uid} admin={admin} members={staff} busy={busy} run={run} t={t}/>:null}
  <footer>{t('Quyền thanh toán khách hàng được giữ ở Cơm Nhà.')}<a href="https://github.com/devoralabsapp/lunch-together-merchant#readme">{t('Đọc hướng dẫn')} ↗</a></footer></main></>;

@@ -75,3 +75,7 @@ MIT. Original code maintained by [devoralabsapp](https://github.com/devoralabsap
 Store management and meal-day linking: [navigation, archives and linked menus](docs/STORES-AND-MEAL-DAYS.md). Desktop navigation is on the left; restaurant selection sits beside the date. The Stores directory offers recoverable deletion and restoration. Lunch Together administrators can create a day manually or from a restaurant’s saved dated menu.
 
 Shared catalog and direct publication: [data model, migration policy and flow](docs/SHARED-CATALOG-AND-MENUS.md).
+
+## Reusable branch menu update
+
+Daily menu now has one Branch menu panel with Publish menu. The latest published menu is reused every day from its effective date until changed. The separate shared-menu panel is removed. See [reusable branch menu](docs/REUSABLE-BRANCH-MENU.md) for current behavior and compatibility.
