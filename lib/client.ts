@@ -59,13 +59,15 @@ export async function bindDay(merchantId:string,date:string){
  await runTransaction(db,async tx=>{if((await tx.get(ref)).exists())throw Error('Ngày này đã liên kết nhà hàng. Liên kết được giữ cố định để bảo toàn lịch sử.');tx.set(ref,{merchantId,date,createdAt:serverTimestamp(),createdBy:actor()});tx.set(e.ref,e.data);});
 }
 export async function publishMenu(merchantId:string,date:string,items:Pick<Dish,'name'|'price'>[],expectedRevision:string){
- const menu=validMenu(items);if(!validDate(date))throw Error('Ngày chưa hợp lệ.');const {db}=firebase(),dayId='day-'+date,ref=doc(db,'days',dayId),old=await getDocs(query(collection(ref,'dishes'),where('active','==',true))),ids=await Promise.all(menu.map(i=>dishId(i.name))),e=event(merchantId,'menu.publish',`Đăng thực đơn ${menu.length} món`,dayId);
+ const menu=validMenu(items);if(!validDate(date))throw Error('Ngày chưa hợp lệ.');const {db}=firebase(),dayId='day-'+date,ref=doc(db,'days',dayId),previous=await getDoc(ref);
+ // A new day's dishes cannot be queried until its parent exists under the shared Rules.
+ const old=previous.exists()?await getDocs(query(collection(ref,'dishes'),where('active','==',true))):null,ids=await Promise.all(menu.map(i=>dishId(i.name))),e=event(merchantId,'menu.publish',`Đăng thực đơn ${menu.length} món`,dayId);
  await runTransaction(db,async tx=>{
   const [binding,day]=await Promise.all([tx.get(doc(db,'merchantDays',dayId)),tx.get(ref)]);
   if(binding.data()?.merchantId!==merchantId)throw Error('Quản trị Cơm Nhà cần liên kết ngày này với nhà hàng trước.');
   if(time(day.data()?.updatedAt)!==expectedRevision)throw Error('Thực đơn vừa thay đổi ở thiết bị khác. Tải lại danh sách rồi thử lại.');
   if(day.exists())tx.update(ref,{menuCount:menu.length,updatedAt:serverTimestamp()});else tx.set(ref,{date,label:'Ngày '+date,status:'auto',menuCount:menu.length,cutoffAt:Timestamp.fromDate(new Date(date+'T09:30:00+07:00')),updatedAt:serverTimestamp()});
-  for(const d of old.docs)if(!ids.includes(d.id))tx.update(d.ref,{active:false,updatedAt:serverTimestamp()});
+  for(const d of old?.docs||[])if(!ids.includes(d.id))tx.update(d.ref,{active:false,updatedAt:serverTimestamp()});
   menu.forEach((item,i)=>tx.set(doc(ref,'dishes',ids[i]),{...item,active:true,updatedAt:serverTimestamp()}));tx.set(e.ref,e.data);
  });
 }

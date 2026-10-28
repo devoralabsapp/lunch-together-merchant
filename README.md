@@ -6,6 +6,8 @@ A dedicated restaurant workspace for [Lunch Together / Cơm Nhà](https://github
 
 *Actual merchant interface with fictitious local-emulator orders. No production customer data is shown.*
 
+[Open the merchant application](https://lunch-together-merchant-devoralabs.vercel.app) · [Implementation prompt](PROMPT.vi.md)
+
 ## Features
 
 - Daily operational dashboard, real-time aggregated kitchen orders, counted preparation notes and print-ready kitchen lists.
