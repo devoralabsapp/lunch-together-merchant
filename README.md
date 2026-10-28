@@ -1,0 +1,63 @@
+# Lunch Together Merchant
+
+A dedicated restaurant workspace for [Lunch Together / Cơm Nhà](https://github.com/devoralabsapp/lunch-together). Both applications use the same Firebase Authentication project and Firestore **Standard** database. Vietnamese is the default interface; English is available in the language selector.
+
+![Kitchen workspace with fictional emulator data](docs/images/kitchen.vi.jpg)
+
+*Actual merchant interface with fictitious local-emulator orders. No production customer data is shown.*
+
+## Features
+
+- Daily operational dashboard, real-time aggregated kitchen orders, counted preparation notes and print-ready kitchen lists.
+- Restaurant dish catalog and daily menus written directly into the existing customer day/menu collections. Original order prices and financial records are preserved.
+- Accepted → cooking → ready → delivering → completed workflow, with role checks and immutable activity events. Changed orders require acknowledgment again; payment-only updates do not reset kitchen acknowledgment.
+- Owner, manager and kitchen roles; restaurant profile and staff access management by Google UID.
+- An isolated, clearly labeled demo that never writes to Firebase. Compatible restaurant-v1 JSON export.
+- The customer app receives the restaurant's preparation/delivery status and changed-order warning.
+
+This is an operational meal-coordination application. Meal order value is **not** a record of money collected. Customer payment/refund/credit authorization stays in Lunch Together. Existing customer order visibility remains shared; new merchant management, catalog and activity permissions are scoped by restaurant.
+
+## Run and connect
+
+Node.js **22** and npm are required.
+
+```sh
+npm ci
+cp .env.example .env.local
+npm run dev
+```
+
+Fill the Firebase Web configuration from the **same** project as Lunch Together. Use the same Firestore database ID. Never add server credentials, private keys or Firebase Admin SDK. Open [localhost:5190](http://localhost:5190).
+
+1. Deploy the matching customer integration and publish the complete shared Firestore Rules from the customer application. The reference [integration/firestore.rules](integration/firestore.rules) uses `PRIMARY_ADMIN_UID_HERE`; preserve the existing operator's primary UID before publishing. Do not replace live Rules with an unconfigured placeholder or a merchant-only fragment.
+2. Add the merchant production hostname to Firebase Authentication → Settings → Authorized domains. Google sign-in must already be enabled.
+3. Sign in with an existing Lunch Together administrator. Create a restaurant and optionally assign an initial owner UID. A Google account can sign in first and copy its UID even before being assigned.
+4. Select a date and click **Link this day**. Each date has one immutable restaurant assignment. Existing days/orders are retained; linking a day does not change its menu, orders or payments.
+5. Add catalog dishes and publish a daily menu. Managers/owners can create an `auto` day or update its menu; only the customer administrator controls opening/closing.
+6. Customers order in Lunch Together. The restaurant receives live changes and updates preparation/delivery status. Kitchen staff can change cooking/ready steps; managers/owners accept and deliver.
+
+New merchant collections do not require a composite index. A regular customer administrator and an owner are different roles. Global customer administrators can manage all restaurants; a regular staff identity belongs to one restaurant in this version.
+
+## Deployment
+
+Import this public GitHub repository into Vercel, select Next.js and Node.js 22, and set the non-empty Firebase Web environment values from `.env.example`. Keep emulator hosts empty on Vercel. Publish the Rules and authorize the final production domain before operational use. Preview deployments should use an isolated Firebase demo/test project if they will write data.
+
+## Validation and development
+
+```sh
+npm test
+npm run typecheck
+npm run build
+```
+
+Model tests cover counted notes, v1 snapshot compatibility, normalized dish IDs, kitchen fingerprints and role transitions. Full shared Rules/integration regression tests live in `tests/merchant-firestore.test.ts` in the Lunch Together repository and run with local Auth/Firestore emulators. Read [the integration contract](docs/INTEGRATION.md) and the complete [Vietnamese implementation prompt](PROMPT.vi.md) before continuing development.
+
+## Tiếng Việt
+
+Ứng dụng riêng cho nhà hàng, dùng chung Firebase với Cơm Nhà. Đăng thực đơn từ merchant sẽ cập nhật đúng ngày bên Cơm Nhà; đơn khách đặt/sửa/hủy được cập nhật về bếp. Trạng thái chuẩn bị/giao cơm được gửi ngược lại. Số lượng ghi chú được tính theo suất; không hiện dòng cho suất không có ghi chú. Không cấp thêm quyền thay đổi tiền của khách cho nhà hàng.
+
+Quản trị Cơm Nhà tạo nhà hàng và liên kết ngày, sau đó cấp chủ/quản lý/nhà bếp theo UID Google. Cần Publish Rules tương thích và thêm hostname merchant vào Authorized domains. Demo dùng dữ liệu giả và không lưu thay đổi.
+
+## License
+
+MIT. Original code maintained by [devoralabsapp](https://github.com/devoralabsapp). See [LICENSE](LICENSE). This repository contains sample data only and does not claim sponsorship or endorsement.

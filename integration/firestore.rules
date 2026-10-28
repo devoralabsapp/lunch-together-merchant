@@ -1,0 +1,552 @@
+rules_version = '2';
+// Prototype rules tested against the app's Web SDK queries and attack cases.
+// days/{id}: date (immutable), label100, status enum, cutoffAt timestamp,
+// menuCount1..60, updatedAt. dishes/{hash}: name160, price int, active bool,
+// updatedAt. orders/{hash}: ownerId128/name100 (immutable except controlled
+// owner transfer), dishId64hex/dish160, price int, quantity1..30, note300,
+// paid/cancelled bool, immutable createdAt, updatedAt; timestamps use request.time.
+// admins/{uid}: enabled=true, Console bootstrap then primary-admin management. accountLinks/{sourceUid}:
+// targetUid, createdAt, expiresAt<=10min. settings/payment: qrUrl, updatedAt.
+// pickupDraws/{YYYY-MM-DD}: date/weekStart/dayId, count1..10, candidateCount<=500,
+// selectedKeys (unique), selectedNames and previousCounts (parallel lists<=10;
+// key/name strings1..100, previousCount0..6),
+// createdBy128, createdAt=request.time, version=1. Admin create only; immutable.
+// userProfiles/{uid}: displayName/preferredName0..100, email0..254 matching
+// verified token, provider anonymous/google.com, immutable createdAt, lastSeenAt.
+// Private to owner and admins. userAccess/{uid}: blocked bool, updatedBy128,
+// updatedAt. admins new writes: enabled bool, updatedBy128, updatedAt.
+// Primary admin alone changes other roles; no self/primary lockout or deletes.
+// Every other collection, including the legacy server schema, stays denied.
+// settings/payment bank schema: bankBin6, bankName100, accountNumber alnum34,
+// accountName70, updatedAt. Immutable paymentIntents bind an exact order/payee
+// snapshot to COM+20hex, an owner/admin requester and expiry<=24h. paymentLinks
+// select the current intent atomically. Primary-only paymentIntegrations grant
+// a dedicated anonymous bot; no administrator role is granted to that identity.
+// Immutable paymentReceipts and paymentTransactions pair one reference with
+// one bank/account/transaction hash. Bot writes only paid=true + updatedAt,
+// atomically with both records, using the unchanged current order/payee/link.
+// companies/departments: admin-managed names<=100, active, immutable createdAt,
+// updatedAt/request.time and updatedBy/UID; department companyId immutable.
+// Optional deletionToken32hex + deletionStartedAt/request.time lock new links.
+// Catalog deletion is admin-only, requires a lock and cleared default; the
+// trusted admin client must server-query all personalDetails before deleting.
+// settings/organization: active default company/department pair, admin write.
+// personalDetails/{uid}: phone<=30, jobTitle<=100, valid company/department IDs;
+// owner write, owner/admin read. Does not change roles or order ownership.
+// personalImports/{uid~hash}: immutable bounded upload manifest; owner upload/
+// restore metadata, admin review acknowledgment only. chunks/{index}: private,
+// immutable strings<=150000; <=70 chunks, entire UTF-8 JSON<=10MB. Uploaded
+// financial values are untrusted archive data and never authorize money writes.
+// personalExports/{32hex}: server integration creates immutable SHA256 receipts
+// for API-generated v2 files; owner/admin/service get only, no list or edits.
+service cloud.firestore {
+ match /databases/{database}/documents {
+  function signedIn(){return request.auth != null;}
+  function googleUser(){return signedIn() && request.auth.token.get('email_verified',false) == true && request.auth.token.firebase.sign_in_provider == 'google.com';}
+  function admin(){return googleUser() && exists(/databases/$(database)/documents/admins/$(request.auth.uid)) && get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.enabled == true;}
+  function primaryAdmin(){return admin() && request.auth.uid == 'PRIMARY_ADMIN_UID_HERE';}
+  function validUid(uid){return uid is string && uid.matches('^[A-Za-z0-9_-]{1,128}$');}
+  function activeUser(){return !exists(/databases/$(database)/documents/userAccess/$(request.auth.uid)) || get(/databases/$(database)/documents/userAccess/$(request.auth.uid)).data.blocked == false;}
+  function validText(value,max){return value is string && value.size()>0 && value.size()<=max && value == value.trim();}
+  // Match the browser's name IDs for Vietnamese names beginning with Đ.
+  function hash(value){return hashing.sha256(value.lower().replace('Đ','đ')).toHexString().lower();}
+  function openDay(dayId){
+   let day=get(/databases/$(database)/documents/days/$(dayId)).data;
+   return day.status == 'open' || (day.status == 'auto' && request.time < day.cutoffAt);
+  }
+  function validDay(d){
+   return d.keys().hasAll(['date','label','status','cutoffAt','menuCount','updatedAt']) && d.keys().hasOnly(['date','label','status','cutoffAt','menuCount','updatedAt'])
+    && d.date is string && d.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$') && validText(d.label,100) && d.status in ['auto','open','closed']
+    && d.menuCount is int && d.menuCount>=1 && d.menuCount<=60
+    && d.cutoffAt is timestamp && d.cutoffAt == timestamp.date(int(d.date.split('-')[0]),int(d.date.split('-')[1]),int(d.date.split('-')[2])) + duration.value(150,'m')
+    && d.updatedAt == request.time;
+  }
+  function validDish(d,dishId){
+   return d.keys().hasAll(['name','price','active','updatedAt']) && d.keys().hasOnly(['name','price','active','updatedAt']) && validText(d.name,160) && dishId == hash(d.name)
+    && d.price is int && d.price>=1000 && d.price<=1000000 && d.active is bool && d.updatedAt == request.time;
+  }
+  function validOrder(d,orderId){
+   return d.keys().hasAll(['name','ownerId','dishId','dish','price','quantity','note','paid','cancelled','createdAt','updatedAt'])
+    && d.keys().hasOnly(['name','ownerId','dishId','dish','price','quantity','note','paid','cancelled','createdAt','updatedAt','receivedAmount','refundedAmount','voidedAmount','paymentEventId','creditInAmount','creditOutAmount','surplusChoice','lastCreditTransferId']) && validMoney(d)
+    && validText(d.name,100) && orderId.matches('^'+hash(d.name)+'(_([1-9]|[12][0-9]|30))?$') && d.ownerId is string && d.ownerId.size()>0 && d.ownerId.size()<=128
+    && d.dishId is string && d.dishId.matches('^[a-f0-9]{64}$') && validText(d.dish,160) && d.price is int && d.price>=1000 && d.price<=1000000
+    && d.quantity is int && d.quantity>=1 && d.quantity<=30 && d.note is string && d.note.size()<=300 && d.paid is bool && d.cancelled is bool
+    && d.createdAt is timestamp && d.updatedAt == request.time;
+  }
+  function received(d){return 'receivedAmount' in d?d.receivedAmount:(d.paid?d.price*d.quantity:0);}
+  function refunded(d){return d.get('refundedAmount',0);}
+  function voided(d){return d.get('voidedAmount',0);}
+  function creditIn(d){return d.get('creditInAmount',0);}
+  function creditOut(d){return d.get('creditOutAmount',0);}
+  function choice(d){return d.get('surplusChoice','refund');}
+  function held(d){return received(d)+creditIn(d)-creditOut(d)-refunded(d)-voided(d);}
+  function owed(d){return d.cancelled?0:d.price*d.quantity;}
+  function due(d){let total=owed(d);let balance=held(d);return total>balance?total-balance:0;}
+  function refundDue(d){let total=owed(d);let balance=held(d);return balance>total?balance-total:0;}
+  function validMoney(d){let r=received(d);let f=refunded(d);let v=voided(d);let ci=creditIn(d);let co=creditOut(d);let c=choice(d);let e=d.get('paymentEventId','');let last=d.get('lastCreditTransferId','');return r is int && r>=0 && r<=1000000000 && f is int && f>=0 && v is int && v>=0 && ci is int && ci>=0 && ci<=1000000000 && co is int && co>=0 && co<=1000000000 && r+ci-co-f-v>=0 && c in ['refund','carry'] && last is string && last.size()<=32 && e is string && e.size()<=32;}
+  function derivedPaid(d){return d.paid==(!d.cancelled && held(d)>=d.price*d.quantity);}
+  function moneyUnchanged(a,b){return received(a)==received(b) && refunded(a)==refunded(b) && voided(a)==voided(b) && creditIn(a)==creditIn(b) && creditOut(a)==creditOut(b) && choice(a)==choice(b);}
+  function bankMoney(d,amount){return received(d)==received(resource.data)+amount && refunded(d)==refunded(resource.data) && voided(d)==voided(resource.data) && creditIn(d)==creditIn(resource.data) && creditOut(d)==creditOut(resource.data) && choice(d)==choice(resource.data) && derivedPaid(d); }
+  function financialEvent(dayId,orderId,d){
+   let id=d.get('paymentEventId','');
+   let path=/databases/$(database)/documents/days/$(dayId)/orders/$(orderId)/financialEvents/$(id);
+   let e=getAfter(path).data;
+   let old=resource.data;
+   let values=[received(old),old.get('refundedAmount',0),old.get('voidedAmount',0),old.get('creditInAmount',0),old.get('creditOutAmount',0),old.get('surplusChoice','refund')];
+   let amount=(old.cancelled?0:old.price*old.quantity)-values[0]+values[1]+values[2]-values[3]+values[4];
+   return id.matches('^[a-f0-9]{32}$') && !exists(path) && e.createdAt==request.time && e.createdBy==request.auth.uid
+    && e.beforeReceived==values[0] && e.beforeRefunded==values[1] && e.beforeVoided==values[2]
+    && e.afterReceived==d.receivedAmount && e.afterRefunded==d.refundedAmount && e.afterVoided==d.voidedAmount
+    && d.creditInAmount==values[3] && d.creditOutAmount==values[4] && d.surplusChoice==values[5] && derivedPaid(d) && d.diff(old).affectedKeys().hasOnly(['paid','receivedAmount','refundedAmount','voidedAmount','creditInAmount','creditOutAmount','surplusChoice','paymentEventId','updatedAt'])
+    && ((e.kind=='receive' && !old.cancelled && amount>0 && d.receivedAmount==values[0]+amount && d.refundedAmount==values[1] && d.voidedAmount==values[2])
+     || (e.kind=='void' && values[3]==0 && !old.cancelled && values[0]-values[1]-values[2]-values[4]>0 && d.voidedAmount==values[0]-values[1]-values[4] && d.receivedAmount==values[0] && d.refundedAmount==values[1])
+     || (e.kind=='refund' && values[5]=='refund' && amount<0 && d.refundedAmount==values[1]-amount && d.receivedAmount==values[0] && d.voidedAmount==values[2]));
+  }
+  match /days/{dayId}/orders/{orderId}/financialEvents/{eventId}{
+   allow read: if signedIn() && (admin() || get(/databases/$(database)/documents/days/$(dayId)/orders/$(orderId)).data.ownerId==request.auth.uid);
+   allow create: if admin() && eventId.matches('^[a-f0-9]{32}$') && request.resource.data.keys().hasAll(['kind','createdBy','createdAt','beforeReceived','beforeRefunded','beforeVoided','afterReceived','afterRefunded','afterVoided']) && request.resource.data.keys().hasOnly(['kind','createdBy','createdAt','beforeReceived','beforeRefunded','beforeVoided','afterReceived','afterRefunded','afterVoided']) && request.resource.data.createdAt==request.time && request.resource.data.createdBy==request.auth.uid && getAfter(/databases/$(database)/documents/days/$(dayId)/orders/$(orderId)).data.paymentEventId==eventId && getAfter(/databases/$(database)/documents/days/$(dayId)/orders/$(orderId)).data.updatedAt==request.time;
+   allow update,delete: if false;
+  }
+  function menuPrice(dayId,d){
+   let item=get(/databases/$(database)/documents/days/$(dayId)/dishes/$(d.dishId)).data;
+   return item.active == true && d.dish == item.name && d.price == item.price;
+  }
+  function samePrice(d){return d.dishId == resource.data.dishId && d.dish == resource.data.dish && d.price == resource.data.price;}
+  function recipient(sourceUid){
+   let path=/databases/$(database)/documents/accountLinks/$(sourceUid);
+   return googleUser() && exists(path) && get(path).data.targetUid == request.auth.uid && request.time < get(path).data.expiresAt;
+  }
+  function ownOrder(){return signedIn() && resource.data.ownerId == request.auth.uid;}
+  function parentExists(dayId){return exists(/databases/$(database)/documents/days/$(dayId));}
+  function correctPayment(d){return moneyUnchanged(d,resource.data) && derivedPaid(d);}
+  function creditPointerMove(dayId,orderId){let p=/databases/$(database)/documents/creditSources/$(dayId+'~'+orderId);return !exists(p) || getAfter(p).data.ownerId==request.auth.uid;}
+  function surplusChange(dayId,orderId,d){
+   return refundDue(resource.data)>0 && received(d)==received(resource.data) && refunded(d)==refunded(resource.data) && voided(d)==voided(resource.data) && creditIn(d)==creditIn(resource.data) && creditOut(d)==creditOut(resource.data) && d.paid==resource.data.paid
+    && d.diff(resource.data).affectedKeys().hasOnly(['surplusChoice','receivedAmount','refundedAmount','voidedAmount','creditInAmount','creditOutAmount','updatedAt'])
+    && (choice(d)=='refund' || getAfter(/databases/$(database)/documents/creditSources/$(dayId+'~'+orderId)).data.ownerId==resource.data.ownerId);
+  }
+  function linkedCreditTransfer(dayId,orderId,d){
+   let id=d.get('lastCreditTransferId','');let p=/databases/$(database)/documents/creditTransfers/$(id);let e=getAfter(p).data;
+   return id.matches('^[a-f0-9]{32}$') && id!=resource.data.get('lastCreditTransferId','') && !exists(p) && e.createdAt==request.time && e.createdBy==request.auth.uid
+    && ((e.sourceDayId==dayId && e.sourceOrderId==orderId)||(e.targetDayId==dayId && e.targetOrderId==orderId));
+  }
+  function validCreditSource(d,key){return d.keys().hasAll(['dayId','orderId','ownerId','createdAt','updatedAt']) && d.keys().hasOnly(['dayId','orderId','ownerId','createdAt','updatedAt']) && validUid(d.ownerId) && key==d.dayId+'~'+d.orderId && d.dayId is string && d.dayId.matches('^[A-Za-z0-9_-]{1,100}$') && d.orderId is string && d.orderId.matches('^[a-f0-9]{64}(_([1-9]|[12][0-9]|30))?$') && d.createdAt is timestamp && d.updatedAt==request.time;}
+  match /creditSources/{key}{
+   allow read: if signedIn();
+   allow create: if signedIn() && validCreditSource(request.resource.data,key) && request.resource.data.createdAt==request.time && (request.resource.data.ownerId==request.auth.uid || admin()) && getAfter(/databases/$(database)/documents/days/$(request.resource.data.dayId)/orders/$(request.resource.data.orderId)).data.ownerId==request.resource.data.ownerId && choice(getAfter(/databases/$(database)/documents/days/$(request.resource.data.dayId)/orders/$(request.resource.data.orderId)).data)=='carry';
+   allow update: if signedIn() && validCreditSource(request.resource.data,key) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ownerId','updatedAt']) && recipient(resource.data.ownerId) && request.resource.data.ownerId==request.auth.uid && getAfter(/databases/$(database)/documents/days/$(resource.data.dayId)/orders/$(resource.data.orderId)).data.ownerId==request.auth.uid;
+   allow delete: if false;
+  }
+  function validCreditTransfer(e,id){
+   let sp=/databases/$(database)/documents/days/$(e.sourceDayId)/orders/$(e.sourceOrderId);let tp=/databases/$(database)/documents/days/$(e.targetDayId)/orders/$(e.targetOrderId);
+   let a=get(sp).data;let b=get(tp).data;let na=getAfter(sp).data;let nb=getAfter(tp).data;
+   let va=[received(a),a.get('refundedAmount',0),a.get('voidedAmount',0),a.get('creditInAmount',0),a.get('creditOutAmount',0),a.get('surplusChoice','refund')];
+   let vb=[received(b),b.get('refundedAmount',0),b.get('voidedAmount',0),b.get('creditInAmount',0),b.get('creditOutAmount',0),b.get('surplusChoice','refund')];
+   let ah=va[0]-va[1]-va[2]+va[3]-va[4];let bh=vb[0]-vb[1]-vb[2]+vb[3]-vb[4];
+   return id.matches('^[a-f0-9]{32}$') && e.keys().hasAll(['ownerId','sourceDayId','sourceOrderId','targetDayId','targetOrderId','amount','createdBy','createdAt']) && e.keys().hasOnly(['ownerId','sourceDayId','sourceOrderId','targetDayId','targetOrderId','amount','createdBy','createdAt'])
+    && sp!=tp && e.ownerId==a.ownerId && a.ownerId==b.ownerId && (a.ownerId==request.auth.uid || admin()) && e.createdBy==request.auth.uid && e.createdAt==request.time && e.amount is int && e.amount>0 && e.amount<=30000000
+    && va[5]=='carry' && ah-(a.cancelled?0:a.price*a.quantity)>=e.amount && !b.cancelled && b.price*b.quantity-bh>=e.amount
+    && na.lastCreditTransferId==id && nb.lastCreditTransferId==id && na.updatedAt==request.time && nb.updatedAt==request.time
+    && na.diff(a).affectedKeys().hasOnly(['creditOutAmount','creditInAmount','surplusChoice','receivedAmount','refundedAmount','voidedAmount','lastCreditTransferId','paid','updatedAt']) && nb.diff(b).affectedKeys().hasOnly(['creditOutAmount','creditInAmount','surplusChoice','receivedAmount','refundedAmount','voidedAmount','lastCreditTransferId','paid','updatedAt'])
+    && na.creditOutAmount==va[4]+e.amount && na.creditInAmount==va[3] && na.receivedAmount==va[0] && na.refundedAmount==va[1] && na.voidedAmount==va[2] && na.surplusChoice==va[5]
+    && nb.creditInAmount==vb[3]+e.amount && nb.creditOutAmount==vb[4] && nb.receivedAmount==vb[0] && nb.refundedAmount==vb[1] && nb.voidedAmount==vb[2] && nb.surplusChoice==vb[5] && na.paid==(!a.cancelled && ah-e.amount>=a.price*a.quantity) && nb.paid==(bh+e.amount>=b.price*b.quantity);
+  }
+  match /creditTransfers/{id}{allow read: if signedIn();allow create: if signedIn() && validCreditTransfer(request.resource.data,id);allow update,delete: if false;}
+  function validActivity(d){return d.keys().hasAll(['kind','actorId','source','summary','dayId','orderId','reference','details','createdAt']) && d.keys().hasOnly(['kind','actorId','source','summary','dayId','orderId','reference','details','createdAt']) && d.actorId==request.auth.uid && d.createdAt==request.time && d.source in ['app','bank'] && d.kind in ['app.visit','page.view','auth.signin','auth.signout','order.create','order.update','order.cancel','order.transfer','menu.save','payment.receive','payment.void','payment.refund','payment.qr','bank.received','bank.notice','app.error','payment.settings','credit.choice','credit.apply','user.block','user.role','pickup.draw','share.create','share.revoke','export.pdf','export.jpg','export.csv','profile.update','organization.save','export.personal','import.personal','import.review'] && d.summary is string && d.summary.size()>0 && d.summary.size()<=500 && d.details is string && d.details.size()<=24000 && d.dayId is string && d.dayId.size()<=100 && d.orderId is string && d.orderId.size()<=70 && d.reference is string && d.reference.size()<=23;}
+  match /activityLogs/{id}{allow read: if signedIn() && (admin() || resource.data.actorId==request.auth.uid);allow create: if signedIn() && id.matches('^[A-Za-z0-9_-]{20,32}$') && validActivity(request.resource.data) && (request.resource.data.source=='app' ? !request.resource.data.kind.matches('^bank[.].*') : (paymentBot() && (request.resource.data.kind=='bank.notice' || (request.resource.data.kind=='bank.received' && getAfter(/databases/$(database)/documents/paymentReceipts/$(request.resource.data.reference)).data.createdBy==request.auth.uid && getAfter(/databases/$(database)/documents/paymentReceipts/$(request.resource.data.reference)).data.createdAt==request.time))));allow update,delete: if false;}
+
+  function validLink(d,sourceUid){
+   return d.keys().hasAll(['targetUid','createdAt','expiresAt']) && d.keys().hasOnly(['targetUid','createdAt','expiresAt'])
+    && signedIn() && sourceUid == request.auth.uid && request.auth.token.firebase.sign_in_provider == 'anonymous'
+    && d.targetUid is string && d.targetUid.matches('^[A-Za-z0-9_-]{1,128}$') && d.targetUid != sourceUid
+    && d.createdAt == request.time && d.expiresAt is timestamp && d.expiresAt > request.time && d.expiresAt <= request.time + duration.value(10,'m');
+  }
+  function validLegacyPayment(d){
+   return d.keys().hasAll(['qrUrl','updatedAt']) && d.keys().hasOnly(['qrUrl','updatedAt']) && d.qrUrl is string && d.qrUrl.size()<=200000
+    && (d.qrUrl == '' || (d.qrUrl.size()<=2000 && d.qrUrl.matches('https://[^ ]+')) || d.qrUrl.matches('data:image/(png|jpeg);base64,[A-Za-z0-9+/=]+')) && d.updatedAt == request.time;
+  }
+  function pickupDate(value){let parts=value.split('-');return timestamp.date(int(parts[0]),int(parts[1]),int(parts[2]));}
+  function validPickupPerson(person,name,previous){
+   return name is string && name.matches('^[^\r\n]{1,100}$')
+    && person is string && person.matches('^[^\r\n]{1,100}$')
+    && previous is int && previous>=0 && previous<=6;
+  }
+  function validPickupItem(keys,names,counts,count,i){return count<=i || validPickupPerson(keys[i],names[i],counts[i]);}
+  function validPickupTime(d){
+   let day=pickupDate(d.date);
+   let week=pickupDate(d.weekStart);
+   return (week.toMillis()-timestamp.date(1970,1,5).toMillis()) % 604800000 == 0
+    && week<=day && day<week+duration.value(7,'d')
+    && request.time >= day-duration.value(7,'h') && request.time < day+duration.value(17,'h');
+  }
+  function validPickup(d,date){
+   let fields=d.keys();
+   let keys=d.selectedKeys;
+   let names=d.selectedNames;
+   let counts=d.previousCounts;
+   let count=d.count;
+   return fields.size()==11 && fields.hasOnly(['date','weekStart','dayId','count','candidateCount','selectedNames','previousCounts','selectedKeys','createdBy','createdAt','version'])
+    && date == d.date && d.date is string && d.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+    && d.weekStart is string && d.weekStart.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+    && validPickupTime(d)
+    && d.dayId is string && d.dayId.matches('^[A-Za-z0-9_-]{1,100}$')
+    && count is int && count>=1 && count<=10 && d.candidateCount is int && d.candidateCount>=count && d.candidateCount<=500
+    && names is list && names.size()==count && counts is list && counts.size()==count
+    && keys is list && keys.size()==count && keys.toSet().size()==count
+    && validPickupItem(keys,names,counts,count,0) && validPickupItem(keys,names,counts,count,1) && validPickupItem(keys,names,counts,count,2) && validPickupItem(keys,names,counts,count,3) && validPickupItem(keys,names,counts,count,4)
+    && validPickupItem(keys,names,counts,count,5) && validPickupItem(keys,names,counts,count,6) && validPickupItem(keys,names,counts,count,7) && validPickupItem(keys,names,counts,count,8) && validPickupItem(keys,names,counts,count,9)
+    && d.createdBy == request.auth.uid && d.createdAt == request.time && d.version is int && d.version == 1
+    && exists(/databases/$(database)/documents/days/$(d.dayId)) && get(/databases/$(database)/documents/days/$(d.dayId)).data.date == d.date
+    && get(/databases/$(database)/documents/days/$(d.dayId)).data.status == 'closed';
+  }
+  match /pickupDraws/{date}{allow read: if signedIn();allow create: if admin() && validPickup(request.resource.data,date);allow update,delete: if false;}
+  function validProfile(d){
+   return d.keys().hasAll(['displayName','preferredName','email','provider','createdAt','lastSeenAt']) && d.keys().hasOnly(['displayName','preferredName','email','provider','createdAt','lastSeenAt'])
+    && d.displayName is string && d.displayName.size()<=100 && d.displayName==d.displayName.trim()
+    && d.preferredName is string && d.preferredName.size()<=100 && d.preferredName==d.preferredName.trim()
+    && d.email is string && d.email.size()<=254 && d.provider in ['anonymous','google.com']
+    && ((d.provider=='anonymous' && request.auth.token.firebase.sign_in_provider=='anonymous' && d.email=='')
+     || (d.provider=='google.com' && googleUser() && d.email.size()>0 && d.email==request.auth.token.email))
+    && d.createdAt is timestamp && d.lastSeenAt==request.time;
+  }
+  function validUserAccess(d){return d.keys().hasAll(['blocked','updatedBy','updatedAt']) && d.keys().hasOnly(['blocked','updatedBy','updatedAt']) && d.blocked is bool && d.updatedBy==request.auth.uid && validUid(d.updatedBy) && d.updatedAt==request.time;}
+  function validAdminRole(d){return d.keys().hasAll(['enabled','updatedBy','updatedAt']) && d.keys().hasOnly(['enabled','updatedBy','updatedAt']) && d.enabled is bool && d.updatedBy==request.auth.uid && validUid(d.updatedBy) && d.updatedAt==request.time;}
+  function canBlockUser(uid){return admin() && validUid(uid) && uid!=request.auth.uid && uid!='PRIMARY_ADMIN_UID_HERE' && (!existsAfter(/databases/$(database)/documents/admins/$(uid)) || getAfter(/databases/$(database)/documents/admins/$(uid)).data.enabled!=true);}
+  function canChangeRole(uid,d){
+   return primaryAdmin() && validUid(uid) && uid!=request.auth.uid && uid!='PRIMARY_ADMIN_UID_HERE' && validAdminRole(d)
+    && (!d.enabled || (existsAfter(/databases/$(database)/documents/userProfiles/$(uid)) && getAfter(/databases/$(database)/documents/userProfiles/$(uid)).data.provider=='google.com'
+     && (!existsAfter(/databases/$(database)/documents/userAccess/$(uid)) || getAfter(/databases/$(database)/documents/userAccess/$(uid)).data.blocked==false)));
+  }
+  match /userProfiles/{uid}{
+   allow get: if signedIn() && (request.auth.uid==uid || admin());allow list: if admin();
+   allow create: if signedIn() && uid==request.auth.uid && validUid(uid) && validProfile(request.resource.data) && request.resource.data.createdAt==request.time;
+   allow update: if signedIn() && uid==request.auth.uid && validProfile(request.resource.data) && request.resource.data.createdAt==resource.data.createdAt;
+   allow delete: if false;
+  }
+  function validCatalog(d,id,department){
+   return id.matches('^[A-Za-z0-9_-]{1,100}$') && d.keys().hasAll(['name','active','createdAt','updatedAt','updatedBy'])
+    && d.keys().hasOnly(department?['name','active','companyId','createdAt','updatedAt','updatedBy','deletionToken','deletionStartedAt']:['name','active','createdAt','updatedAt','updatedBy','deletionToken','deletionStartedAt'])
+    && validText(d.name,100) && d.active is bool && d.createdAt is timestamp && d.updatedAt==request.time && d.updatedBy==request.auth.uid
+    && ((!('deletionToken' in d) && !('deletionStartedAt' in d)) || (d.deletionToken is string && d.deletionToken.matches('^[a-f0-9]{32}$') && d.deletionStartedAt==request.time))
+    && (!department || (d.companyId is string && d.companyId.matches('^[A-Za-z0-9_-]{1,100}$') && existsAfter(/databases/$(database)/documents/companies/$(d.companyId)) && catalogOpen(getAfter(/databases/$(database)/documents/companies/$(d.companyId)).data) && (!d.active || getAfter(/databases/$(database)/documents/companies/$(d.companyId)).data.active==true || (resource!=null && resource.data.active==true && resource.data.companyId==d.companyId))));
+  }
+  function catalogOpen(d){return d.get('deletionToken','')=='';}
+  function catalogDeleteAllowed(id,company){return admin() && resource.data.get('deletionToken','').matches('^[a-f0-9]{32}$') && (!existsAfter(/databases/$(database)/documents/settings/organization) || (company?getAfter(/databases/$(database)/documents/settings/organization).data.defaultCompanyId!=id:getAfter(/databases/$(database)/documents/settings/organization).data.defaultDepartmentId!=id));}
+  function validAffiliation(companyId,departmentId){
+   return companyId is string && companyId.size()<=100 && departmentId is string && departmentId.size()<=100
+    && ((companyId=='' && departmentId=='') || (companyId.matches('^[A-Za-z0-9_-]{1,100}$') && getAfter(/databases/$(database)/documents/companies/$(companyId)).data.active==true && catalogOpen(getAfter(/databases/$(database)/documents/companies/$(companyId)).data)
+     && (departmentId=='' || (departmentId.matches('^[A-Za-z0-9_-]{1,100}$') && getAfter(/databases/$(database)/documents/departments/$(departmentId)).data.active==true && catalogOpen(getAfter(/databases/$(database)/documents/departments/$(departmentId)).data) && getAfter(/databases/$(database)/documents/departments/$(departmentId)).data.companyId==companyId))));
+  }
+  function validOrganization(d){return d.keys().hasAll(['defaultCompanyId','defaultDepartmentId','updatedAt','updatedBy']) && d.keys().hasOnly(['defaultCompanyId','defaultDepartmentId','updatedAt','updatedBy']) && validAffiliation(d.defaultCompanyId,d.defaultDepartmentId) && ((d.defaultCompanyId=='' && d.defaultDepartmentId=='') || (d.defaultCompanyId!='' && d.defaultDepartmentId!='')) && d.updatedAt==request.time && d.updatedBy==request.auth.uid;}
+  function validPersonalDetails(d){return d.keys().hasAll(['companyId','departmentId','phone','jobTitle','updatedAt']) && d.keys().hasOnly(['companyId','departmentId','phone','jobTitle','updatedAt']) && validAffiliation(d.companyId,d.departmentId) && d.phone is string && d.phone.size()<=30 && d.phone.matches('^[0-9+(). -]*$') && d.jobTitle is string && d.jobTitle.size()<=100 && d.updatedAt==request.time;}
+  match /companies/{id}{allow read: if signedIn();allow create: if admin() && validCatalog(request.resource.data,id,false) && request.resource.data.createdAt==request.time;allow update: if admin() && validCatalog(request.resource.data,id,false) && request.resource.data.createdAt==resource.data.createdAt;allow delete: if catalogDeleteAllowed(id,true);}
+  match /departments/{id}{allow read: if signedIn();allow create: if admin() && validCatalog(request.resource.data,id,true) && request.resource.data.createdAt==request.time;allow update: if admin() && validCatalog(request.resource.data,id,true) && request.resource.data.createdAt==resource.data.createdAt && request.resource.data.companyId==resource.data.companyId;allow delete: if catalogDeleteAllowed(id,false);}
+  match /settings/organization{allow read: if signedIn();allow create,update: if admin() && validOrganization(request.resource.data);allow delete: if false;}
+  match /personalDetails/{uid}{allow get: if signedIn() && (uid==request.auth.uid || admin());allow list: if admin();allow create,update: if signedIn() && uid==request.auth.uid && validUid(uid) && validPersonalDetails(request.resource.data);allow delete: if false;}
+  function ownsImport(id){return signedIn() && id.matches('^'+request.auth.uid+'~[a-f0-9]{64}$');}
+  function validPersonalExport(d,id){return id.matches('^[a-f0-9]{32}$') && d.keys().hasAll(['ownerId','fileHash','bytes','formatVersion','exportedAt','orderCount','createdBy','createdAt']) && d.keys().hasOnly(['ownerId','fileHash','bytes','formatVersion','exportedAt','orderCount','createdBy','createdAt']) && validUid(d.ownerId) && d.fileHash is string && d.fileHash.matches('^[a-f0-9]{64}$') && d.bytes is int && d.bytes>0 && d.bytes<=10000000 && d.formatVersion==2 && d.exportedAt is string && d.exportedAt.size()<=40 && d.exportedAt.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z$') && d.orderCount is int && d.orderCount>=0 && d.orderCount<=20000 && d.createdBy==request.auth.uid && d.createdAt==request.time;}
+  match /personalExports/{id}{allow get: if signedIn() && (paymentBot() || admin() || (resource!=null && resource.data.ownerId==request.auth.uid));allow list: if false;allow create: if paymentBot() && validPersonalExport(request.resource.data,id);allow update,delete: if false;}
+  function verifiedImport(d){let e=get(/databases/$(database)/documents/personalExports/$(d.exportId)).data;return e.fileHash==d.fileHash && e.ownerId==d.sourceUid && e.bytes==d.bytes && e.orderCount==d.orderCount && e.formatVersion==2;}
+  function validPersonalImport(d,id){return d.keys().hasAll(['ownerId','sourceUid','fileHash','bytes','chunkCount','orderCount','moneyCount','restoredCount','skippedCount','state','reviewedBy','reviewNote','createdAt','updatedAt']) && d.keys().hasOnly(['ownerId','sourceUid','exportId','fileHash','bytes','chunkCount','orderCount','moneyCount','restoredCount','skippedCount','state','reviewedBy','reviewNote','createdAt','updatedAt']) && (!('exportId' in d) || (d.exportId is string && d.exportId.matches('^[a-f0-9]{32}$')))
+   && validUid(d.ownerId) && validUid(d.sourceUid) && d.fileHash is string && d.fileHash.matches('^[a-f0-9]{64}$') && id==d.ownerId+'~'+d.fileHash
+   && d.bytes is int && d.bytes>0 && d.bytes<=10000000 && d.chunkCount is int && d.chunkCount>=1 && d.chunkCount<=70
+   && d.orderCount is int && d.orderCount>=0 && d.orderCount<=20000 && d.moneyCount is int && d.moneyCount>=0 && d.moneyCount<=d.orderCount
+   && d.restoredCount is int && d.restoredCount>=0 && d.restoredCount<=d.orderCount && d.skippedCount is int && d.skippedCount>=0 && d.skippedCount<=d.orderCount
+   && d.state in ['uploading','ready','restored','pending','reviewed'] && d.reviewedBy is string && (d.reviewedBy=='' || validUid(d.reviewedBy)) && d.reviewNote is string && d.reviewNote.size()<=1000 && d.createdAt is timestamp && d.updatedAt==request.time;}
+  match /personalImports/{id}{
+   allow get: if ownsImport(id) || admin();allow list: if signedIn() && (resource.data.ownerId==request.auth.uid || admin());
+   allow create: if ownsImport(id) && validPersonalImport(request.resource.data,id) && 'exportId' in request.resource.data && verifiedImport(request.resource.data) && request.resource.data.ownerId==request.auth.uid && request.resource.data.createdAt==request.time && request.resource.data.state=='uploading' && request.resource.data.restoredCount==0 && request.resource.data.skippedCount==0 && request.resource.data.reviewedBy=='' && request.resource.data.reviewNote=='';
+   allow update: if signedIn() && validPersonalImport(request.resource.data,id) && (
+    (ownsImport(id) && resource.data.ownerId==request.auth.uid && resource.data.state!='reviewed' && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['state','restoredCount','skippedCount','updatedAt']) && ((resource.data.state=='uploading' && request.resource.data.state=='ready') || (resource.data.state in ['ready','restored','pending'] && (request.resource.data.state=='pending' || (request.resource.data.state=='restored' && request.resource.data.moneyCount==0 && request.resource.data.skippedCount==0)))))
+    || (admin() && resource.data.state=='pending' && request.resource.data.state=='reviewed' && request.resource.data.reviewedBy==request.auth.uid && request.resource.data.reviewNote.size()>0 && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['state','reviewedBy','reviewNote','updatedAt'])));
+   allow delete: if false;
+   match /chunks/{index}{
+    allow read: if signedIn() && (get(/databases/$(database)/documents/personalImports/$(id)).data.ownerId==request.auth.uid || admin());
+    allow create: if ownsImport(id) && get(/databases/$(database)/documents/personalImports/$(id)).data.ownerId==request.auth.uid && get(/databases/$(database)/documents/personalImports/$(id)).data.state=='uploading'
+     && request.resource.data.keys().hasAll(['index','data','createdAt']) && request.resource.data.keys().hasOnly(['index','data','createdAt']) && request.resource.data.index is int && request.resource.data.index>=0 && request.resource.data.index<get(/databases/$(database)/documents/personalImports/$(id)).data.chunkCount && index==string(request.resource.data.index)
+     && request.resource.data.data is string && request.resource.data.data.size()>0 && request.resource.data.data.size()<=150000 && request.resource.data.createdAt==request.time;
+    allow update,delete: if false;
+   }
+  }
+  match /userAccess/{uid}{
+   allow get: if signedIn() && (request.auth.uid==uid || admin());allow list: if admin();
+   allow create,update: if canBlockUser(uid) && validUserAccess(request.resource.data);allow delete: if false;
+  }
+  match /admins/{uid}{
+   allow get: if (googleUser() && request.auth.uid==uid) || admin();allow list: if admin();
+   allow create,update: if canChangeRole(uid,request.resource.data);allow delete: if false;
+  }
+  match /accountLinks/{sourceUid}{
+   allow get: if signedIn() && (request.auth.uid == sourceUid || (resource != null && googleUser() && resource.data.targetUid == request.auth.uid));
+   allow list,update: if false;
+   allow create: if validLink(request.resource.data,sourceUid);
+   allow delete: if signedIn() && (request.auth.uid == sourceUid || (googleUser() && resource.data.targetUid == request.auth.uid));
+  }
+  // Bank payee settings; legacy qrUrl remains readable during migration.
+  function bankFields(d){return d.bankBin is string && d.bankBin.matches('^[0-9]{6}$') && validText(d.bankName,100) && d.accountNumber is string && d.accountNumber.matches('^[A-Za-z0-9]{1,34}$') && validText(d.accountName,70);}
+  function validBankPayment(d){return d.keys().hasAll(['bankBin','bankName','accountNumber','accountName','updatedAt']) && d.keys().hasOnly(['bankBin','bankName','accountNumber','accountName','updatedAt']) && bankFields(d) && d.updatedAt==request.time;}
+  function paymentCode(code){return code is string && code.matches('^COM[A-F0-9]{20}$');}
+  function paymentBot(){return signedIn() && request.auth.token.firebase.sign_in_provider=='anonymous' && exists(/databases/$(database)/documents/paymentIntegrations/$(request.auth.uid)) && get(/databases/$(database)/documents/paymentIntegrations/$(request.auth.uid)).data.enabled==true;}
+  function paymentOrderAccess(dayId,orderId){return signedIn() && (get(/databases/$(database)/documents/days/$(dayId)/orders/$(orderId)).data.ownerId==request.auth.uid || recipient(get(/databases/$(database)/documents/days/$(dayId)/orders/$(orderId)).data.ownerId) || admin() || paymentBot());}
+  // Immutable intent: account + exact current order snapshot, at most 24h.
+  function validPaymentIntent(d,code){
+   let o=get(/databases/$(database)/documents/days/$(d.dayId)/orders/$(d.orderId)).data;
+   let bank=get(/databases/$(database)/documents/settings/payment).data;
+   return d.keys().hasAll(['bankBin','bankName','accountNumber','accountName','reference','dayId','orderId','ownerId','requestedBy','name','amount','dishId','price','quantity','description','orderCreatedAt','bankConfigUpdatedAt','createdAt','expiresAt'])
+    && d.keys().hasOnly(['bankBin','bankName','accountNumber','accountName','reference','dayId','orderId','ownerId','requestedBy','name','amount','dishId','price','quantity','description','orderCreatedAt','bankConfigUpdatedAt','createdAt','expiresAt'])
+    && !exists(/databases/$(database)/documents/paymentGroups/$(code)) && paymentCode(code) && d.reference==code && d.dayId is string && d.dayId.matches('^[A-Za-z0-9_-]{1,100}$') && d.orderId is string && d.orderId.matches('^[a-f0-9]{64}(_([1-9]|[12][0-9]|30))?$')
+    && (o.ownerId==request.auth.uid || admin()) && d.requestedBy==request.auth.uid && validUid(d.requestedBy) && validUid(d.ownerId) && d.ownerId==o.ownerId && validText(d.name,100) && d.name==o.name
+    && o.paid==false && o.cancelled==false && d.orderCreatedAt==o.createdAt && d.dishId==o.dishId && d.price==o.price && d.quantity==o.quantity && d.amount is int && d.amount==due(o)
+    && bankFields(d) && d.bankBin==bank.bankBin && d.bankName==bank.bankName && d.accountNumber==bank.accountNumber && d.accountName==bank.accountName && d.bankConfigUpdatedAt==bank.updatedAt
+    && validText(d.description,50) && d.description.matches('.*'+code+'.*') && d.createdAt==request.time && d.expiresAt is timestamp && d.expiresAt>request.time && d.expiresAt<=request.time+duration.value(1,'d')
+    && getAfter(/databases/$(database)/documents/paymentLinks/$(d.dayId)/orders/$(d.orderId)).data.reference==code;
+  }
+  function validSinglePaymentLink(d,dayId,orderId){
+   let intent=getAfter(/databases/$(database)/documents/paymentIntents/$(d.reference)).data;
+   return d.keys().hasAll(['reference','updatedAt']) && d.keys().hasOnly(['reference','updatedAt']) && paymentCode(d.reference) && d.updatedAt==request.time && intent.dayId==dayId && intent.orderId==orderId && intent.createdAt==request.time;
+  }
+  function validIntegration(d,uid,creating){return request.auth.uid=='PRIMARY_ADMIN_UID_HERE' && admin() && validUid(uid) && uid!=request.auth.uid && d.keys().hasAll(['enabled','createdAt','updatedAt']) && d.keys().hasOnly(['enabled','createdAt','updatedAt']) && d.enabled is bool && d.createdAt is timestamp && d.createdAt==(creating?request.time:resource.data.createdAt) && d.updatedAt==request.time;}
+  function validPaymentReceipt(d,code){
+   let intent=get(/databases/$(database)/documents/paymentIntents/$(code)).data;
+   let o=get(/databases/$(database)/documents/days/$(intent.dayId)/orders/$(intent.orderId)).data;
+   let bank=get(/databases/$(database)/documents/settings/payment).data;
+   return d.keys().hasAll(['reference','transactionKey','transactionId','amount','bankBin','accountNumber','occurredAt','notificationHash','createdBy','createdAt']) && d.keys().hasOnly(['reference','transactionKey','transactionId','amount','bankBin','accountNumber','occurredAt','notificationHash','createdBy','createdAt'])
+    && paymentCode(code) && d.reference==code && d.createdBy==request.auth.uid && d.createdAt==request.time && d.transactionId is string && d.transactionId.matches('^[A-Za-z0-9._/-]{1,120}$')
+    && d.transactionKey==hash(d.bankBin+'|'+d.accountNumber+'|'+d.transactionId) && d.notificationHash is string && d.notificationHash.matches('^[a-f0-9]{64}$')
+    && d.amount is int && d.amount==intent.amount && d.amount==due(o) && d.bankBin==intent.bankBin && d.accountNumber==intent.accountNumber
+    && bank.bankBin==intent.bankBin && bank.accountNumber==intent.accountNumber && bank.updatedAt==intent.bankConfigUpdatedAt
+    && intent.expiresAt>request.time && o.paid==false && o.cancelled==false && o.ownerId==intent.ownerId && o.createdAt==intent.orderCreatedAt && o.dishId==intent.dishId && o.price==intent.price && o.quantity==intent.quantity
+    && d.occurredAt is timestamp && d.occurredAt>=intent.createdAt-duration.value(2,'m') && d.occurredAt<=request.time+duration.value(5,'m') && d.occurredAt<=intent.expiresAt
+    && get(/databases/$(database)/documents/paymentLinks/$(intent.dayId)/orders/$(intent.orderId)).data.reference==code
+    && !exists(/databases/$(database)/documents/paymentTransactions/$(d.transactionKey)) && getAfter(/databases/$(database)/documents/paymentTransactions/$(d.transactionKey)).data.reference==code
+    && getAfter(/databases/$(database)/documents/days/$(intent.dayId)/orders/$(intent.orderId)).data.paid==true;
+  }
+  function webhookPayment(dayId,orderId,d){
+   let code=get(/databases/$(database)/documents/paymentLinks/$(dayId)/orders/$(orderId)).data.reference;
+   let receipt=getAfter(/databases/$(database)/documents/paymentReceipts/$(code)).data;
+   return paymentBot() && resource.data.paid==false && resource.data.cancelled==false && d.paid==true && d.diff(resource.data).affectedKeys().hasOnly(['paid','receivedAmount','refundedAmount','voidedAmount','updatedAt'])
+    && bankMoney(d,receipt.amount) && !exists(/databases/$(database)/documents/paymentReceipts/$(code)) && receipt.reference==code && receipt.createdAt==request.time && receipt.createdBy==request.auth.uid && receipt.amount==due(resource.data);
+  }
+
+  // Multi-line names are claimed once per day; legacy hash-only orders remain valid.
+  function validPerson(d,id){return d.keys().hasAll(['name','ownerId','createdAt','updatedAt']) && d.keys().hasOnly(['name','ownerId','createdAt','updatedAt']) && validText(d.name,100) && id==hash(d.name) && validUid(d.ownerId) && d.createdAt is timestamp && d.updatedAt==request.time;}
+  function personOrderAccess(dayId,orderId,d){
+   let person=/databases/$(database)/documents/days/$(dayId)/orderPeople/$(hash(d.name));
+   return (orderId==hash(d.name) && !existsAfter(person)) || (existsAfter(person) && getAfter(person).data.ownerId==d.ownerId);
+  }
+  match /days/{dayId}/orderPeople/{id}{
+   allow read: if signedIn() && parentExists(dayId);
+   allow create: if signedIn() && activeUser() && validPerson(request.resource.data,id) && request.resource.data.createdAt==request.time && openDay(dayId)
+    && (request.resource.data.ownerId==request.auth.uid || admin())
+    && (!exists(/databases/$(database)/documents/days/$(dayId)/orders/$(id)) || get(/databases/$(database)/documents/days/$(dayId)/orders/$(id)).data.ownerId==request.resource.data.ownerId);
+   allow update: if signedIn() && validPerson(request.resource.data,id) && request.resource.data.name==resource.data.name && request.resource.data.createdAt==resource.data.createdAt && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ownerId','updatedAt']) && recipient(resource.data.ownerId) && request.resource.data.ownerId==request.auth.uid;
+   allow delete: if false;
+  }
+  function groupPerson(name){return name.lower().replace('Đ','đ').replace('[\\s]+',' ');}
+  function validGroup(g,code){
+   return g.keys().hasAll(['reference','requestedBy','name','personKey','ownerIds','amount','count','expectedCount','lastItemKey','state','selectionHash','bankBin','bankName','accountNumber','accountName','bankConfigUpdatedAt','createdAt','updatedAt','expiresAt','invalidatedDayId','invalidatedOrderId'])
+    && g.keys().hasOnly(['reference','requestedBy','name','personKey','ownerIds','amount','count','expectedCount','lastItemKey','state','selectionHash','bankBin','bankName','accountNumber','accountName','bankConfigUpdatedAt','createdAt','updatedAt','expiresAt','invalidatedDayId','invalidatedOrderId'])
+    && paymentCode(code) && code==g.reference && validUid(g.requestedBy) && validText(g.name,100) && g.personKey==groupPerson(g.name)
+    && g.ownerIds is list && g.ownerIds.size()<=1000 && g.ownerIds.toSet().size()==g.ownerIds.size()
+    && g.amount is int && g.amount>=0 && g.amount<=30000000 && g.count is int && g.count>=0 && g.expectedCount is int && g.expectedCount>=1 && g.expectedCount<=1000 && g.count<=g.expectedCount
+    && g.lastItemKey is string && g.lastItemKey.size()<=200 && g.state in ['building','ready','invalid','paid'] && g.selectionHash is string && g.selectionHash.matches('^[a-f0-9]{64}$')
+    && bankFields(g) && g.bankConfigUpdatedAt is timestamp && g.createdAt is timestamp && g.updatedAt==request.time && g.expiresAt is timestamp && g.expiresAt>g.createdAt && g.expiresAt<=g.createdAt+duration.value(1,'d')
+    && g.invalidatedDayId is string && g.invalidatedDayId.size()<=100 && g.invalidatedOrderId is string && g.invalidatedOrderId.size()<=70;
+  }
+  function groupBank(g){let b=get(/databases/$(database)/documents/settings/payment).data;return g.bankBin==b.bankBin && g.bankName==b.bankName && g.accountNumber==b.accountNumber && g.accountName==b.accountName && g.bankConfigUpdatedAt==b.updatedAt;}
+  function groupAppend(g,code){
+   let item=getAfter(/databases/$(database)/documents/paymentGroups/$(code)/items/$(g.lastItemKey)).data;
+   return resource.data.state=='building' && g.state=='building' && request.time<g.expiresAt && request.auth.uid==g.requestedBy
+    && g.diff(resource.data).affectedKeys().hasOnly(['count','amount','lastItemKey','ownerIds','updatedAt'])
+    && !exists(/databases/$(database)/documents/paymentGroups/$(code)/items/$(g.lastItemKey))
+    && g.count==resource.data.count+1 && g.amount==resource.data.amount+item.amount
+    && g.ownerIds.toSet()==resource.data.ownerIds.toSet().union([item.ownerId].toSet());
+  }
+  function groupInvalidation(g,code){
+   return resource.data.state in ['building','ready'] && g.state=='invalid' && g.diff(resource.data).affectedKeys().hasOnly(['state','updatedAt','invalidatedDayId','invalidatedOrderId'])
+    && (g.requestedBy==request.auth.uid || admin() || (g.invalidatedDayId!='' && get(/databases/$(database)/documents/paymentLinks/$(g.invalidatedDayId)/orders/$(g.invalidatedOrderId)).data.reference==code
+     && (get(/databases/$(database)/documents/days/$(g.invalidatedDayId)/orders/$(g.invalidatedOrderId)).data.ownerId==request.auth.uid || recipient(get(/databases/$(database)/documents/days/$(g.invalidatedDayId)/orders/$(g.invalidatedOrderId)).data.ownerId))));
+  }
+  function editableGroup(code,key){
+   let g=get(/databases/$(database)/documents/paymentGroups/$(code)).data;
+   return exists(/databases/$(database)/documents/paymentGroupSettlements/$(code)/items/$(key)) || g.state=='invalid' || (g.state!='paid' && g.expiresAt<=request.time)
+    || (g.state in ['building','ready'] && getAfter(/databases/$(database)/documents/paymentGroups/$(code)).data.state=='invalid' && getAfter(/databases/$(database)/documents/paymentGroups/$(code)).data.updatedAt==request.time);
+  }
+  function editableLinkedOrder(dayId,orderId){
+   let link=/databases/$(database)/documents/paymentLinks/$(dayId)/orders/$(orderId);
+   return !exists(link) || get(link).data.get('kind','single')!='group' || editableGroup(get(link).data.reference,dayId+'~'+orderId);
+  }
+  function validGroupItem(i,code,key){
+   let before=get(/databases/$(database)/documents/paymentGroups/$(code)).data;
+   let after=getAfter(/databases/$(database)/documents/paymentGroups/$(code)).data;
+   let o=get(/databases/$(database)/documents/days/$(i.dayId)/orders/$(i.orderId)).data;
+   return i.keys().hasAll(['key','dayId','orderId','date','name','dish','ownerId','dishId','price','quantity','amount','orderCreatedAt']) && i.keys().hasOnly(['key','dayId','orderId','date','name','dish','ownerId','dishId','price','quantity','amount','orderCreatedAt'])
+    && before.state=='building' && before.requestedBy==request.auth.uid && request.time<before.expiresAt && after.lastItemKey==key && after.count==before.count+1 && after.updatedAt==request.time
+    && key==i.key && key==i.dayId+'~'+i.orderId && i.date==get(/databases/$(database)/documents/days/$(i.dayId)).data.date && o.cancelled==false && o.paid==false && (o.ownerId==request.auth.uid || admin())
+    && i.name==o.name && (groupPerson(o.name)==before.personKey || o.ownerId==request.auth.uid) && i.dish==o.dish && i.ownerId==o.ownerId && i.dishId==o.dishId && i.price is int && i.quantity is int && i.amount is int && i.price==o.price && i.quantity==o.quantity && i.orderCreatedAt==o.createdAt && i.amount==due(o)
+    && getAfter(/databases/$(database)/documents/paymentLinks/$(i.dayId)/orders/$(i.orderId)).data.reference==code && getAfter(/databases/$(database)/documents/paymentLinks/$(i.dayId)/orders/$(i.orderId)).data.kind=='group';
+  }
+  function validGroupLink(d,dayId,orderId){
+   let g=getAfter(/databases/$(database)/documents/paymentGroups/$(d.reference)).data;
+   let item=getAfter(/databases/$(database)/documents/paymentGroups/$(d.reference)/items/$(dayId+'~'+orderId)).data;
+   return d.keys().hasAll(['reference','kind','updatedAt']) && d.keys().hasOnly(['reference','kind','updatedAt']) && d.kind=='group' && d.updatedAt==request.time && g.state=='building' && g.requestedBy==request.auth.uid && g.updatedAt==request.time && g.lastItemKey==dayId+'~'+orderId && item.dayId==dayId && item.orderId==orderId;
+  }
+  function validGroupReceipt(d,code){
+   let g=get(/databases/$(database)/documents/paymentGroups/$(code)).data;
+   return d.keys().hasAll(['reference','transactionKey','transactionId','amount','bankBin','accountNumber','occurredAt','notificationHash','createdBy','createdAt']) && d.keys().hasOnly(['reference','transactionKey','transactionId','amount','bankBin','accountNumber','occurredAt','notificationHash','createdBy','createdAt'])
+    && g.state=='ready' && g.count==g.expectedCount && g.count>0 && groupBank(g) && g.expiresAt>request.time && d.reference==code && d.createdBy==request.auth.uid && d.createdAt==request.time
+    && d.transactionId is string && d.transactionId.matches('^[A-Za-z0-9._/-]{1,120}$') && d.transactionKey==hash(d.bankBin+'|'+d.accountNumber+'|'+d.transactionId) && d.notificationHash is string && d.notificationHash.matches('^[a-f0-9]{64}$')
+    && d.amount is int && d.amount==g.amount && d.bankBin==g.bankBin && d.accountNumber==g.accountNumber && d.occurredAt is timestamp && d.occurredAt>=g.createdAt-duration.value(2,'m') && d.occurredAt<=request.time+duration.value(5,'m') && d.occurredAt<=g.expiresAt
+    && !exists(/databases/$(database)/documents/paymentTransactions/$(d.transactionKey)) && getAfter(/databases/$(database)/documents/paymentTransactions/$(d.transactionKey)).data.reference==code
+    && getAfter(/databases/$(database)/documents/paymentGroups/$(code)).data.state=='paid' && getAfter(/databases/$(database)/documents/paymentGroups/$(code)).data.updatedAt==request.time;
+  }
+  function validGroupSettlement(d,code,key){
+   let i=get(/databases/$(database)/documents/paymentGroups/$(code)/items/$(key)).data;
+   let o=get(/databases/$(database)/documents/days/$(i.dayId)/orders/$(i.orderId)).data;
+   return d.keys().hasAll(['reference','dayId','orderId','createdBy','createdAt']) && d.keys().hasOnly(['reference','dayId','orderId','createdBy','createdAt']) && d.reference==code && d.dayId==i.dayId && d.orderId==i.orderId && d.createdBy==request.auth.uid && d.createdAt==request.time
+    && get(/databases/$(database)/documents/paymentGroups/$(code)).data.state=='paid' && get(/databases/$(database)/documents/paymentReceipts/$(code)).data.reference==code
+    && i.amount==due(o) && o.paid==false && o.cancelled==false && o.ownerId==i.ownerId && o.createdAt==i.orderCreatedAt && o.dishId==i.dishId && o.price==i.price && o.quantity==i.quantity
+    && get(/databases/$(database)/documents/paymentLinks/$(i.dayId)/orders/$(i.orderId)).data.reference==code
+    && getAfter(/databases/$(database)/documents/days/$(i.dayId)/orders/$(i.orderId)).data.paid==true;
+  }
+  function webhookGroupPayment(dayId,orderId,d){
+   let code=get(/databases/$(database)/documents/paymentLinks/$(dayId)/orders/$(orderId)).data.reference;
+   let key=dayId+'~'+orderId;
+   let marker=getAfter(/databases/$(database)/documents/paymentGroupSettlements/$(code)/items/$(key)).data;
+   return resource.data.paid==false && resource.data.cancelled==false && d.paid==true && d.diff(resource.data).affectedKeys().hasOnly(['paid','receivedAmount','refundedAmount','voidedAmount','updatedAt'])
+    && bankMoney(d,get(/databases/$(database)/documents/paymentGroups/$(code)/items/$(key)).data.amount) && !exists(/databases/$(database)/documents/paymentGroupSettlements/$(code)/items/$(key)) && marker.reference==code && marker.createdAt==request.time && marker.createdBy==request.auth.uid;
+  }
+  match /paymentGroups/{code}{
+   allow get: if signedIn();allow list: if admin() || (signedIn() && resource.data.requestedBy==request.auth.uid);
+   allow create: if signedIn() && validGroup(request.resource.data,code) && request.resource.data.requestedBy==request.auth.uid && request.resource.data.createdAt==request.time && request.resource.data.state=='building' && request.resource.data.count==0 && request.resource.data.amount==0 && request.resource.data.ownerIds==[] && request.resource.data.lastItemKey=='' && request.resource.data.invalidatedDayId=='' && request.resource.data.invalidatedOrderId=='' && groupBank(request.resource.data) && !exists(/databases/$(database)/documents/paymentIntents/$(code));
+   allow update: if signedIn() && validGroup(request.resource.data,code) && (
+    groupAppend(request.resource.data,code) || groupInvalidation(request.resource.data,code)
+    || (request.auth.uid==resource.data.requestedBy && resource.data.state=='building' && request.resource.data.state=='ready' && request.resource.data.count==request.resource.data.expectedCount && request.resource.data.count>0 && request.time<resource.data.expiresAt && groupBank(resource.data) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['state','updatedAt']))
+    || (paymentBot() && resource.data.state=='ready' && request.resource.data.state=='paid' && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['state','updatedAt']) && getAfter(/databases/$(database)/documents/paymentReceipts/$(code)).data.createdAt==request.time && getAfter(/databases/$(database)/documents/paymentReceipts/$(code)).data.createdBy==request.auth.uid));
+   allow delete: if false;
+   match /items/{key}{allow read: if signedIn();allow create: if signedIn() && validGroupItem(request.resource.data,code,key);allow update,delete: if false;}
+  }
+  match /paymentGroupSettlements/{code}/items/{key}{allow read: if signedIn();allow create: if paymentBot() && validGroupSettlement(request.resource.data,code,key);allow update,delete: if false;}
+
+  match /settings/payment{allow read: if signedIn();allow create,update: if admin() && (validBankPayment(request.resource.data) || validLegacyPayment(request.resource.data));allow delete: if false;}
+  match /paymentIntegrations/{uid}{allow get: if admin() || (signedIn() && uid==request.auth.uid);allow list: if admin();allow create: if validIntegration(request.resource.data,uid,true);allow update: if validIntegration(request.resource.data,uid,false);allow delete: if false;}
+  match /paymentIntents/{code}{allow get: if signedIn() && (paymentBot() || admin() || (resource!=null && resource.data.ownerId==request.auth.uid));allow list: if admin();allow create: if signedIn() && validPaymentIntent(request.resource.data,code);allow update,delete: if false;}
+  match /paymentLinks/{dayId}/orders/{orderId}{allow get: if paymentOrderAccess(dayId,orderId);allow list: if admin();allow create,update: if paymentOrderAccess(dayId,orderId) && !paymentBot() && editableLinkedOrder(dayId,orderId) && (request.resource.data.get('kind','single')=='group'?validGroupLink(request.resource.data,dayId,orderId):validSinglePaymentLink(request.resource.data,dayId,orderId));allow delete: if paymentOrderAccess(dayId,orderId) && !paymentBot() && editableLinkedOrder(dayId,orderId);}
+  match /paymentReceipts/{code}{
+   allow get: if signedIn() && (paymentBot() || admin() || get(/databases/$(database)/documents/paymentIntents/$(code)).data.ownerId==request.auth.uid);allow list: if admin();
+   allow create: if paymentBot() && (exists(/databases/$(database)/documents/paymentGroups/$(code))?validGroupReceipt(request.resource.data,code):validPaymentReceipt(request.resource.data,code));allow update,delete: if false;
+  }
+  match /paymentTransactions/{key}{
+   allow get: if paymentBot() || admin();allow list: if admin();
+   allow create: if paymentBot() && key.matches('^[a-f0-9]{64}$') && request.resource.data.keys().hasAll(['reference','createdAt']) && request.resource.data.keys().hasOnly(['reference','createdAt']) && paymentCode(request.resource.data.reference) && request.resource.data.createdAt==request.time
+    && getAfter(/databases/$(database)/documents/paymentReceipts/$(request.resource.data.reference)).data.transactionKey==key && getAfter(/databases/$(database)/documents/paymentReceipts/$(request.resource.data.reference)).data.createdAt==request.time;
+   allow update,delete: if false;
+  }
+  // Merchant extension v1: one immutable merchant binding per existing day.
+  // merchantUsers/{uid}: merchantId, role(owner/manager/kitchen), enabled,
+  // createdAt immutable; updatedAt/request.time, updatedBy/current UID.
+  // merchants/{id}: name<=100, phone<=30, address<=300, active bool,
+  // createdAt/createdBy immutable, updatedAt/updatedBy; catalog uses validDish.
+  // merchantDays/{dayId}: merchantId, date, createdAt, createdBy; admin create only.
+  // merchantFulfillments/{dayId}: merchantId/date immutable, state enum,
+  // note<=300, orderHash64, lastEventId32, createdAt immutable, updatedAt/By.
+  // merchants/{id}/events/{id}: kind enum, message<=500, dayId<=100,
+  // actorId/current UID, createdAt/request.time; immutable, merchant/admin read.
+  function merchantStaff(id){
+   let p=/databases/$(database)/documents/merchantUsers/$(request.auth.uid);
+   let m=/databases/$(database)/documents/merchants/$(id);
+   return googleUser() && activeUser() && exists(p) && get(p).data.enabled==true && get(p).data.merchantId==id && exists(m) && get(m).data.active==true;
+  }
+  function merchantRole(id,roles){return merchantStaff(id) && get(/databases/$(database)/documents/merchantUsers/$(request.auth.uid)).data.role in roles;}
+  function merchantEditor(dayId){let p=/databases/$(database)/documents/merchantDays/$(dayId);return googleUser() && exists(p) && merchantRole(get(p).data.merchantId,['owner','manager']);}
+  function validMerchant(d){return d.keys().hasAll(['name','phone','address','active','createdAt','createdBy','updatedAt','updatedBy']) && d.keys().hasOnly(['name','phone','address','active','createdAt','createdBy','updatedAt','updatedBy']) && validText(d.name,100) && d.phone is string && d.phone.size()<=30 && d.address is string && d.address.size()<=300 && d.active is bool && validUid(d.createdBy) && d.createdAt is timestamp && d.updatedBy==request.auth.uid && d.updatedAt==request.time;}
+  function validMerchantUser(d){return d.keys().hasAll(['merchantId','role','enabled','createdAt','updatedAt','updatedBy']) && d.keys().hasOnly(['merchantId','role','enabled','createdAt','updatedAt','updatedBy']) && validUid(d.merchantId) && d.role in ['owner','manager','kitchen'] && d.enabled is bool && d.createdAt is timestamp && d.updatedAt==request.time && d.updatedBy==request.auth.uid;}
+  function validMerchantBinding(d,dayId){return d.keys().hasAll(['merchantId','date','createdAt','createdBy']) && d.keys().hasOnly(['merchantId','date','createdAt','createdBy']) && validUid(d.merchantId) && exists(/databases/$(database)/documents/merchants/$(d.merchantId)) && d.date is string && d.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$') && dayId=='day-'+d.date && d.createdAt==request.time && d.createdBy==request.auth.uid;}
+  match /merchants/{id}{
+   allow get: if admin() || merchantStaff(id) || signedIn();
+   allow list: if admin();
+   allow create: if admin() && validUid(id) && validMerchant(request.resource.data) && request.resource.data.createdAt==request.time && request.resource.data.createdBy==request.auth.uid;
+   allow update: if (admin() || merchantRole(id,['owner','manager'])) && validMerchant(request.resource.data) && request.resource.data.createdAt==resource.data.createdAt && request.resource.data.createdBy==resource.data.createdBy && (admin() || request.resource.data.active==resource.data.active);
+   allow delete: if false;
+   match /catalog/{dishId}{
+    allow read: if admin() || merchantStaff(id);
+    allow create,update: if (admin() || merchantRole(id,['owner','manager'])) && validDish(request.resource.data,dishId);
+    allow delete: if false;
+   }
+   match /events/{eventId}{
+    allow read: if admin() || merchantStaff(id);
+    allow create: if (admin() || merchantStaff(id)) && eventId.matches('^[a-f0-9]{32}$') && request.resource.data.keys().hasAll(['kind','message','dayId','actorId','createdAt']) && request.resource.data.keys().hasOnly(['kind','message','dayId','actorId','createdAt']) && request.resource.data.kind in ['merchant.create','menu.publish','catalog.save','status.change','member.update','merchant.update','day.bind'] && validText(request.resource.data.message,500) && request.resource.data.dayId is string && request.resource.data.dayId.size()<=100 && request.resource.data.actorId==request.auth.uid && request.resource.data.createdAt==request.time;
+    allow update,delete: if false;
+   }
+  }
+  match /merchantUsers/{uid}{
+   allow get: if googleUser() && (uid==request.auth.uid || admin() || merchantRole(resource.data.merchantId,['owner']));
+   allow list: if admin() || merchantRole(resource.data.merchantId,['owner']);
+   allow create: if validUid(uid) && validMerchantUser(request.resource.data) && request.resource.data.createdAt==request.time && (admin() || (merchantRole(request.resource.data.merchantId,['owner']) && request.resource.data.role!='owner'));
+   allow update: if validMerchantUser(request.resource.data) && request.resource.data.merchantId==resource.data.merchantId && request.resource.data.createdAt==resource.data.createdAt && (admin() || (merchantRole(resource.data.merchantId,['owner']) && resource.data.role!='owner' && request.resource.data.role!='owner' && uid!=request.auth.uid));
+   allow delete: if false;
+  }
+  match /merchantDays/{dayId}{
+   allow get: if signedIn();
+   allow list: if admin() || merchantStaff(resource.data.merchantId);
+   allow create: if admin() && validMerchantBinding(request.resource.data,dayId);
+   allow update,delete: if false;
+  }
+  function validFulfillment(d,dayId){
+   let b=get(/databases/$(database)/documents/merchantDays/$(dayId)).data;
+   return d.keys().hasAll(['merchantId','date','state','note','orderHash','lastEventId','createdAt','updatedAt','updatedBy']) && d.keys().hasOnly(['merchantId','date','state','note','orderHash','lastEventId','createdAt','updatedAt','updatedBy']) && d.merchantId==b.merchantId && d.date==b.date && parentExists(dayId) && d.state in ['accepted','cooking','ready','delivering','completed'] && d.note is string && d.note.size()<=300 && d.orderHash is string && d.orderHash.matches('^[a-f0-9]{64}$') && d.lastEventId is string && d.lastEventId.matches('^[a-f0-9]{32}$') && d.createdAt is timestamp && d.updatedAt==request.time && d.updatedBy==request.auth.uid;
+  }
+  function merchantStatusEvent(d,dayId){let p=/databases/$(database)/documents/merchants/$(d.merchantId)/events/$(d.lastEventId);return !exists(p) && getAfter(p).data.kind=='status.change' && getAfter(p).data.dayId==dayId && getAfter(p).data.actorId==request.auth.uid && getAfter(p).data.createdAt==request.time;}
+  function fulfillmentStep(a,b){return (a=='accepted' && b=='cooking') || (a=='cooking' && b=='ready') || (a=='ready' && b=='delivering') || (a=='delivering' && b=='completed');}
+  match /merchantFulfillments/{dayId}{
+   allow read: if signedIn();
+   allow create: if validFulfillment(request.resource.data,dayId) && request.resource.data.createdAt==request.time && request.resource.data.state=='accepted' && (admin() || merchantRole(request.resource.data.merchantId,['owner','manager'])) && merchantStatusEvent(request.resource.data,dayId);
+   allow update: if validFulfillment(request.resource.data,dayId) && request.resource.data.createdAt==resource.data.createdAt && request.resource.data.merchantId==resource.data.merchantId && request.resource.data.date==resource.data.date && merchantStatusEvent(request.resource.data,dayId)
+    && (admin() || merchantStaff(resource.data.merchantId))
+    && ((fulfillmentStep(resource.data.state,request.resource.data.state) && request.resource.data.orderHash==resource.data.orderHash && (admin() || merchantRole(resource.data.merchantId,['owner','manager']) || request.resource.data.state in ['cooking','ready']))
+     || (request.resource.data.state=='accepted' && request.resource.data.orderHash!=resource.data.orderHash && (admin() || merchantRole(resource.data.merchantId,['owner','manager']))));
+   allow delete: if false;
+  }
+
+  match /days/{dayId}{
+   allow read: if signedIn();
+   allow create: if (admin() || (merchantEditor(dayId) && dayId=='day-'+request.resource.data.date && request.resource.data.status=='auto')) && dayId.matches('^[A-Za-z0-9_-]{1,100}$') && validDay(request.resource.data);
+   allow update: if (admin() || (merchantEditor(dayId) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['label','menuCount','updatedAt']))) && validDay(request.resource.data) && request.resource.data.date == resource.data.date;
+   allow delete: if false;
+   match /dishes/{dishId}{
+    allow read: if signedIn() && parentExists(dayId);
+    allow create,update: if (admin() || merchantEditor(dayId)) && getAfter(/databases/$(database)/documents/days/$(dayId)).data.date is string && validDish(request.resource.data,dishId);
+    allow delete: if false;
+   }
+   match /orders/{orderId}{
+    // All app visitors receive an anonymous Firebase session and may view meals.
+    // Editing, cancellation, payment and ownership transfer remain checked below.
+    allow get,list: if signedIn() && parentExists(dayId);
+    allow create: if signedIn() && activeUser() && validOrder(request.resource.data,orderId) && (request.resource.data.ownerId == request.auth.uid || admin())
+     && request.resource.data.createdAt == request.time && request.resource.data.paid == false && request.resource.data.cancelled == false && received(request.resource.data)==0 && refunded(request.resource.data)==0 && voided(request.resource.data)==0 && creditIn(request.resource.data)==0 && creditOut(request.resource.data)==0 && choice(request.resource.data)=='refund' && request.resource.data.get('lastCreditTransferId','')=='' && request.resource.data.get('paymentEventId','')=='' && personOrderAccess(dayId,orderId,request.resource.data) && openDay(dayId) && menuPrice(dayId,request.resource.data);
+    allow update: if signedIn() && parentExists(dayId) && validOrder(request.resource.data,orderId) && request.resource.data.createdAt == resource.data.createdAt && request.resource.data.name == resource.data.name && (
+     (paymentBot() && (get(/databases/$(database)/documents/paymentLinks/$(dayId)/orders/$(orderId)).data.get('kind','single')=='group'?webhookGroupPayment(dayId,orderId,request.resource.data):webhookPayment(dayId,orderId,request.resource.data)))
+     || (request.resource.data.ownerId != resource.data.ownerId && request.resource.data.ownerId == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ownerId','updatedAt']) && recipient(resource.data.ownerId) && editableLinkedOrder(dayId,orderId) && creditPointerMove(dayId,orderId))
+     || (editableLinkedOrder(dayId,orderId) && request.resource.data.ownerId == resource.data.ownerId && (
+      (choice(request.resource.data)!=choice(resource.data) && (ownOrder() || admin()) && surplusChange(dayId,orderId,request.resource.data))
+      || (request.resource.data.get('lastCreditTransferId','')!=resource.data.get('lastCreditTransferId','') && linkedCreditTransfer(dayId,orderId,request.resource.data))
+      || (admin() && request.resource.data.get('paymentEventId','')!=resource.data.get('paymentEventId','') && financialEvent(dayId,orderId,request.resource.data))
+      || (((ownOrder() && (activeUser() || (request.resource.data.cancelled==true && request.resource.data.paid==false && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['cancelled','paid','receivedAmount','refundedAmount','voidedAmount','creditInAmount','creditOutAmount','surplusChoice','updatedAt'])))) || admin()) && openDay(dayId) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['dishId','dish','price','quantity','note','paid','cancelled','receivedAmount','refundedAmount','voidedAmount','creditInAmount','creditOutAmount','surplusChoice','updatedAt'])
+       && (samePrice(request.resource.data) || menuPrice(dayId,request.resource.data)) && correctPayment(request.resource.data))
+     ))
+    );
+    allow delete: if false;
+   }
+  }
+  // Explicitly public capability link requested for restaurant handoff. No list
+  // access without admin, no user/payment fields in the validated JSON view.
+  function validRestaurantShare(d,token){return token.matches('^[a-f0-9]{32}$') && d.keys().hasAll(['dayId','payload','active','version','createdBy','createdAt','expiresAt']) && d.keys().hasOnly(['dayId','payload','active','version','createdBy','createdAt','expiresAt']) && d.dayId is string && d.dayId.matches('^[A-Za-z0-9_-]{1,100}$') && parentExists(d.dayId) && d.payload is string && d.payload.size()>0 && d.payload.size()<=300000 && d.active is bool && d.version==1 && validUid(d.createdBy) && d.createdAt is timestamp && d.expiresAt is timestamp && d.expiresAt>d.createdAt && d.expiresAt<=d.createdAt+duration.value(7,'d');}
+  match /restaurantShares/{token}{
+   allow get: if admin() || (resource.data.active==true && request.time<resource.data.expiresAt);allow list: if admin();
+   allow create: if admin() && validRestaurantShare(request.resource.data,token) && request.resource.data.createdBy==request.auth.uid && request.resource.data.createdAt==request.time && request.resource.data.active==true;
+   allow update: if admin() && validRestaurantShare(request.resource.data,token) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['active']) && request.resource.data.active==false;
+   allow delete: if false;
+  }
+  match /{path=**}{allow read,write: if false;}
+ }
+}
