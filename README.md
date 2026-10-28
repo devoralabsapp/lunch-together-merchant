@@ -71,3 +71,5 @@ Người mới đăng nhập Google chờ quản trị duyệt tại **Phê duy�
 ## License
 
 MIT. Original code maintained by [devoralabsapp](https://github.com/devoralabsapp). See [LICENSE](LICENSE). This repository contains sample data only and does not claim sponsorship or endorsement.
+
+Store management and meal-day linking: [navigation, archives and linked menus](docs/STORES-AND-MEAL-DAYS.md). Desktop navigation is on the left; restaurant selection sits beside the date. The Stores directory offers recoverable deletion and restoration. Lunch Together administrators can create a day manually or from a restaurant’s saved dated menu.

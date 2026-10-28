@@ -48,3 +48,5 @@ One restaurant assignment per meal date. Owners can create multiple stores; staf
 ## Approval and branch extension
 
 See [approval and branches](APPROVAL-AND-BRANCHES.md). merchantApplications/{uid} stores self-owned pending applications; merchantApprovalEvents/{id} stores administrator-only immutable paired verdicts. merchantStoreUsers/{merchantId}~{uid} grants access at each store. merchants/{id}/menus/{date}/dishes/{id} holds private per-branch menus; managers explicitly publish a saved branch menu into a bound customer day. No cross-branch menu replication occurs. Existing financial authorization and legacy grants remain unchanged.
+
+The store directory adds optional archived:boolean to merchants (true requires active=false). Owners/admins archive/restore; hard deletion remains denied. Private branch menus accept 0..60 items; customer published menus retain 1..60. Customer-admin linked creation is an atomic day/menu/binding/audit snapshot. See [store and meal-day flow](STORES-AND-MEAL-DAYS.md).
