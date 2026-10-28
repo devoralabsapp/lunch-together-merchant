@@ -80,3 +80,7 @@ Bỏ màn Thực đơn đồng bộ Cơm Nhà, giữ một bảng Thực đơn r
 ## Nhân sự chung theo nhà hàng
 
 Gộp nhân sự các cơ sở cùng ownerId vào một tab, bỏ chọn cơ sở/ngày. Giữ quyền cũ cho đến khi quản trị/chủ nhà hàng lưu lại quyền chung trong merchantTeamUsers; quyền chung áp dụng cả cơ sở mới và khi khóa phải chặn fallback quyền cũ. Chủ nhà hàng bất biến, chỉ quản trị cấp/đổi vai trò owner, không tự chỉnh quyền của mình. Tìm bằng UID hoặc email Google đã xác minh trong merchantEmailDirectory, chỉ get đúng hash email, cấm list; người dùng phải được duyệt trước. Không dùng Admin SDK/khóa riêng hoặc mở hồ sơ riêng tư. Xem docs/RESTAURANT-TEAM.md.
+
+## Thực đơn và chốt đơn
+
+Thực đơn cơ sở tự lấy món đang phục vụ từ danh mục; sau khi đăng chỉ xem, bấm Sửa thực đơn mới mở ô nhập và thao tác món. Nhà hàng chỉ đọc/nhận danh sách sau khi quản trị Cơm Nhà chốt thủ công. Chỉ mở lại trong 15 phút từ lần chốt đầu tiên; chốt lại tạo mã danh sách mới và yêu cầu nhà hàng nhận lại. Đồng bộ trực tiếp 5 trạng thái Đã nhận đơn, Đang nấu, Sẵn sàng, Đang giao, Hoàn tất sang Cơm Nhà.

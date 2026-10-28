@@ -63,3 +63,7 @@ Daily menu now has one Branch menu panel with Publish menu. The latest published
 ## Restaurant-wide staff extension
 
 merchantTeamUsers stores restaurant-wide grants; merchantEmailDirectory supports exact verified-email lookup without enumeration. Explicit shared grants override legacy scoped membership, including revocation. See [restaurant-wide staff](RESTAURANT-TEAM.md) for schema, migration boundaries, permissions and setup.
+
+## Closed-order dispatch
+
+See [closed-order dispatch](CLOSED-ORDER-DISPATCH.md): Merchant order reads and fulfillment writes require explicit customer-admin closure, and reopening is limited to 15 minutes from the first close. Deploy the shared Rules before updating both portals.
