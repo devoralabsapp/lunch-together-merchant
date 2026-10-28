@@ -72,3 +72,7 @@ Menu Merchant desktop ở bên trái, bộ chọn nhà hàng cạnh ngày và gi
 Danh mục món dùng chung giữa các cơ sở cùng ownerId bất biến; không gộp khác chủ. Chủ/quản trị tự động gộp catalog cũ một lần, giữ dữ liệu cũ; món trùng tên dùng bản cập nhật mới nhất ban đầu, các lần sau giữ chỉnh sửa trong danh mục chung. Quản lý sửa món sau khởi tạo; bếp chỉ đọc. Mọi truy cập kiểm tra quyền thành viên hiện tại.
 
 Thực đơn đồng bộ dùng form/bảng Sửa/Bỏ món như thực đơn cơ sở. Nút Đăng thực đơn lưu offers theo cơ sở/ngày ngay, không cần liên kết trước. Cơm Nhà ưu tiên offers khi tạo ngày liên kết, fallback thực đơn cơ sở cũ. Khi đã gắn đúng cơ sở, đăng cập nhật offer và menu khách nguyên tử; không đổi liên kết, đơn cũ hay tiền. Xem docs/SHARED-CATALOG-AND-MENUS.md.
+
+## Thực đơn cơ sở dùng lại hằng ngày
+
+Bỏ màn Thực đơn đồng bộ Cơm Nhà, giữ một bảng Thực đơn riêng của cơ sở có nút Đăng thực đơn. Mỗi bản đã đăng có hiệu lực từ ngày được chọn, dùng tiếp cho các ngày sau tới bản đăng mới. Dùng offers hiện có, truy vấn date <= ngày phục vụ rồi giảm dần/limit 1; bản tương lai không lùi về quá khứ. Sửa món chỉ là bản nháp cho tới khi đăng. Giữ snapshot ngày và giá đơn cũ, đồng bộ đúng ngày đã gắn nếu đăng cho ngày đó. Không đổi Rules hoặc quyền tài chính. Xem docs/REUSABLE-BRANCH-MENU.md.
