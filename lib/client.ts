@@ -6,10 +6,12 @@ const rows=<T>(snapshot:{docs:QueryDocumentSnapshot<DocumentData>[]})=>snapshot.
 const actor=()=>{const u=firebase().auth.currentUser;if(!u||u.isAnonymous||!u.emailVerified)throw Error('Đăng nhập Google đã xác minh để tiếp tục.');return u.uid;};
 function event(merchantId:string,kind:string,message:string,dayId=''){const id=crypto.randomUUID().replaceAll('-','');return {ref:doc(firebase().db,'merchants',merchantId,'events',id),id,data:{kind,message,dayId,actorId:actor(),createdAt:serverTimestamp()}};}
 export function watchAccess(uid:string,callback:(v:{admin:boolean;member:Member|null})=>void,error:(e:unknown)=>void):Unsubscribe{
- let admin=false,member:Member|null=null;const db=firebase().db;
- const a=onSnapshot(doc(db,'admins',uid),s=>{admin=s.data()?.enabled===true;callback({admin,member});},error);
- const b=onSnapshot(doc(db,'merchantUsers',uid),s=>{member=s.exists()?{id:s.id,...s.data()} as Member:null;callback({admin,member});},error);
- return ()=>{a();b();};
+ let admin=false,member:Member|null=null,blocked=false;const db=firebase().db,ready=new Set<string>();
+ const emit=(key:string)=>{ready.add(key);if(ready.size===3)callback({admin,member:blocked&&member?{...member,enabled:false}:member});};
+ const a=onSnapshot(doc(db,'admins',uid),s=>{admin=s.data()?.enabled===true;emit('admin');},error);
+ const b=onSnapshot(doc(db,'merchantUsers',uid),s=>{member=s.exists()?{id:s.id,...s.data()} as Member:null;emit('member');},error);
+ const c=onSnapshot(doc(db,'userAccess',uid),s=>{blocked=s.data()?.blocked===true;emit('blocked');},error);
+ return ()=>{a();b();c();};
 }
 export function watchMerchants(admin:boolean,member:Member|null,callback:(v:Merchant[])=>void,error:(e:unknown)=>void){
  const db=firebase().db;if(admin)return onSnapshot(collection(db,'merchants'),s=>callback(rows<Merchant>(s)),error);
