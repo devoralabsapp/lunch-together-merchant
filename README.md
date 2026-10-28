@@ -6,7 +6,14 @@ A dedicated restaurant workspace for [Lunch Together / Cơm Nhà](https://github
 
 *Actual merchant interface with fictitious local-emulator orders. No production customer data is shown.*
 
-[Open the merchant application](https://lunch-together-merchant-devoralabs.vercel.app) · [Implementation prompt](PROMPT.vi.md)
+[Open the merchant application](https://lunchtogether-merchant.devoralabs.tech/) · [Implementation prompt](PROMPT.vi.md)
+
+Regular Google accounts belong to one portal: an assigned merchant account uses
+Merchant, and a customer account uses Lunch Together. Only verified customer
+administrators can enter both. An unassigned or disabled account is signed out
+of Merchant before any workspace loads; its UID remains available to copy for
+administrator onboarding. Disabled memberships never become customer accounts.
+See [portal access](docs/PORTAL-ACCESS.md) for the shared Rules and account policy.
 
 ## Features
 

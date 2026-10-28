@@ -1,5 +1,13 @@
 # Shared-data protocol · version 1
 
+## Portal admission
+
+Regular customer and merchant accounts use one portal each. Membership existence
+reserves a Google UID for Merchant, including disabled membership. Only verified
+Google administrators may use both portals. Admission checks run before showing
+the workspace; unauthorized sessions are signed out locally. Shared operational
+reads remain scoped to assigned meal days. See [portal account policy](PORTAL-ACCESS.md).
+
 Both applications use Firebase Web SDK and the same Standard database. There is no replication queue or new trusted server identity. Existing `admins/{uid}` remains the customer administrator authority; merchant membership does not make a person a customer administrator.
 
 | Path | Reader / writer |
