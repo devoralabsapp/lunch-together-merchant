@@ -17,7 +17,7 @@ See [approval, branches and themes](docs/APPROVAL-AND-BRANCHES.md) for setup and
 ## Features
 
 - Daily operational dashboard, real-time aggregated kitchen orders, counted preparation notes and print-ready kitchen lists.
-- Restaurant dish catalog and daily menus written directly into the existing customer day/menu collections. Original order prices and financial records are preserved.
+- Shared restaurant catalog across branches, with table-based daily publication. Publish before customer day selection; assigned dates synchronize atomically. Original order prices and financial records are preserved.
 - Accepted → cooking → ready → delivering → completed workflow, with role checks and immutable activity events. Changed orders require acknowledgment again; payment-only updates do not reset kitchen acknowledgment.
 - Administrator-reviewed registration, approval feedback, suspension and restoration.
 - Multiple owned stores, per-branch dated menus and per-store owner/manager/kitchen roles. One person can work at multiple branches.
@@ -73,3 +73,5 @@ Người mới đăng nhập Google chờ quản trị duyệt tại **Phê duy�
 MIT. Original code maintained by [devoralabsapp](https://github.com/devoralabsapp). See [LICENSE](LICENSE). This repository contains sample data only and does not claim sponsorship or endorsement.
 
 Store management and meal-day linking: [navigation, archives and linked menus](docs/STORES-AND-MEAL-DAYS.md). Desktop navigation is on the left; restaurant selection sits beside the date. The Stores directory offers recoverable deletion and restoration. Lunch Together administrators can create a day manually or from a restaurant’s saved dated menu.
+
+Shared catalog and direct publication: [data model, migration policy and flow](docs/SHARED-CATALOG-AND-MENUS.md).

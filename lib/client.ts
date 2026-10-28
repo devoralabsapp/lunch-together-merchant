@@ -23,9 +23,9 @@ export function watchStoreRole(id:string,uid:string,callback:(role:Role|null|und
 export function watchMerchant(id:string,callback:(v:{bindings?:Binding[];catalog?:Dish[];events?:Activity[]})=>void,error:(e:unknown)=>void){
  const db=firebase().db;
  const a=onSnapshot(query(collection(db,'merchantDays'),where('merchantId','==',id)),s=>callback({bindings:rows<Binding>(s).sort((a,b)=>b.date.localeCompare(a.date))}),error);
- const b=onSnapshot(collection(db,'merchants',id,'catalog'),s=>callback({catalog:rows<Dish>(s).sort((a,b)=>a.name.localeCompare(b.name,'vi'))}),error);
+
  const c=onSnapshot(query(collection(db,'merchants',id,'events'),orderBy('createdAt','desc'),limit(30)),s=>callback({events:s.docs.map(d=>({id:d.id,...d.data(),createdAt:time(d.data().createdAt)}) as Activity)}),error);
- return ()=>{a();b();c();};
+ return ()=>{a();c();};
 }
 export function watchDay(id:string,callback:(v:{day?:Day|null;dishes?:Dish[];orders?:Order[];fulfillment?:Fulfillment|null})=>void,error:(e:unknown)=>void){
  const db=firebase().db;let children:Unsubscribe[]=[];
