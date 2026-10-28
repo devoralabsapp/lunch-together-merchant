@@ -50,3 +50,5 @@ Tab Cửa hàng có danh sách thêm/sửa/xóa và mục Đã lưu trữ để 
 lịch sử thay vì xóa vĩnh viễn. Thực đơn cơ sở hiển thị dạng bảng như Danh mục món.
 Ở Cơm Nhà, Lịch sử đặt cơm → Tạo ngày mới có Nhập thủ công hoặc Liên kết nhà hàng.
 Nhà hàng cần lưu thực đơn cơ sở cho đúng ngày trước khi quản trị tạo ngày liên kết.
+
+Catalog is an all-dates dish collection for the current restaurant. It has no restaurant/date controls; open a store in Stores before managing its catalog. The global unbound-day banner is removed from all tabs. Shared-menu draft selection and row editing are available to owners/managers before a day binding exists, while publishing still requires the existing binding. Administrators connect the day from a compact action inside the shared editor. This is the existing operation, with unchanged Firestore permissions. Kitchen roles remain read-only.
