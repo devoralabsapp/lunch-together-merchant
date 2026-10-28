@@ -12,15 +12,15 @@ Bạn là kỹ sư full-stack chịu trách nhiệm xây dựng, kiểm thử v�
 
 ## Sản phẩm phải làm
 
-1. Màn đăng nhập rõ ràng, tự nhận quyền đã cấp, hiển thị UID để nhân sự gửi quản trị khi chưa có quyền. Có chế độ dữ liệu mẫu tách khỏi Firebase, không giả làm dữ liệu thật.
+1. Màn đăng nhập Google tạo hồ sơ chờ duyệt; chỉ quản trị hệ thống được phê duyệt trước khi mở chức năng cửa hàng. Giữ các quyền đã cấp từ phiên bản cũ. Có chế độ dữ liệu mẫu tách khỏi Firebase, không giả làm dữ liệu thật.
 2. Tổng quan theo nhà hàng và ngày: số dòng đơn, số suất, tổng giá trị đơn, số món; ghi rõ tổng giá trị đơn không phải số tiền đã thu. Hiển thị ngày đã liên kết và nhật ký gần đây.
 3. Danh mục món riêng: thêm món, sửa giá, ngừng/mở lại món. Không xóa lịch sử và không tự động sửa giá trên đơn đã đặt.
 4. Thực đơn theo ngày: chọn món từ danh mục hoặc nhập nhiều dòng, sửa giá, công bố vào đúng collection của Cơm Nhà. Chỉ chủ/quản lý được công bố cho ngày đã gắn nhà hàng. Cảnh báo xung đột khi thực đơn đổi ở thiết bị khác. Ngày mới ở chế độ `auto`; merchant không tự mở lại ngày đã chốt.
 5. Bếp và đơn hàng: nghe thay đổi trực tiếp của đơn Cơm Nhà; tính theo **suất**, loại đơn hủy; nhóm theo món + đơn giá, cộng số suất cho từng ghi chú. Ví dụ tổng 8 suất nhưng 1 suất note thì chỉ ghi `1× Ít cơm, không hành`; không hiện dòng “7 suất không có ghi chú”.
 6. Trạng thái: mới → đã nhận → đang nấu → sẵn sàng → đang giao → hoàn tất. Chủ/quản lý nhận và giao; nhà bếp chỉ chuyển bước nấu/sẵn sàng. Không bỏ qua bước. Khi khách đổi món, số lượng, ghi chú hoặc hủy sau khi nhận, cả hai ứng dụng phải báo cần xác nhận lại; không dùng thay đổi thanh toán đơn thuần để bắt xác nhận bếp lại.
-7. Nhân sự theo UID Google, vai trò `owner`, `manager`, `kitchen`, có khóa/mở. Một UID thuộc một nhà hàng trong phiên bản đầu. Chủ chỉ quản lý nhân viên cấp thấp hơn; không tự nâng vai trò hay di chuyển nhân sự sang nhà hàng khác. Quản trị Cơm Nhà tạo nhà hàng, cấp chủ và liên kết ngày.
+7. Nhân sự theo UID Google, vai trò `owner`, `manager`, `kitchen`, có khóa/mở. Một tài khoản đã duyệt có thể sở hữu nhiều cửa hàng; một nhân sự có nhiều vai trò theo từng cơ sở. Chủ chỉ quản lý nhân viên cấp thấp hơn; không tự nâng vai trò hay di chuyển nhân sự sang nhà hàng khác. Chủ đã duyệt có thể tạo cơ sở mới. Quản trị Cơm Nhà phê duyệt tài khoản và liên kết ngày.
 8. Thông tin cửa hàng: tên, điện thoại, địa chỉ. Nhật ký thêm mới, không sửa/xóa. Có in danh sách bếp và xuất JSON tương thích hợp đồng restaurant v1.
-9. Giao diện desktop/mobile chuyên nghiệp, dễ dùng trong bếp, màu cream/pastel với viền đen và bóng cứng nhẹ lấy cảm hứng Retro; phân cấp rõ, trạng thái tải/lỗi/rỗng, focus bàn phím, reduced motion. Không thêm chức năng giả hoặc số liệu kinh doanh bịa đặt.
+9. Sáu theme chọn độc lập: Classic, Command Line đen, VS Code, Excel, Midnight, Playful Retro Neo-Brutalism; mặc định Retro/tiếng Việt, có tiếng Anh và lưu lựa chọn. Giao diện desktop/mobile chuyên nghiệp, dễ dùng trong bếp, màu cream/pastel với viền đen và bóng cứng nhẹ lấy cảm hứng Retro; phân cấp rõ, trạng thái tải/lỗi/rỗng, focus bàn phím, reduced motion. Không thêm chức năng giả hoặc số liệu kinh doanh bịa đặt.
 
 ## Hợp đồng tương thích bắt buộc
 
@@ -31,6 +31,10 @@ merchants/{merchantId}
 merchants/{merchantId}/catalog/{dishId}
 merchants/{merchantId}/events/{eventId}
 merchantUsers/{uid}
+merchantApplications/{uid}
+merchantApprovalEvents/{eventId}
+merchantStoreUsers/{merchantId}~{uid}
+merchants/{merchantId}/menus/{date}/dishes/{dishId}
 merchantDays/{dayId}
 merchantFulfillments/{dayId}
 
@@ -56,3 +60,5 @@ days/{dayId}/orders/{existingOrderId}
 - Tạo repo public `lunch-together-merchant`, deploy Vercel từ commit đã kiểm thử, xác minh URL và SHA. Nếu cần người dùng Publish Rules hoặc Authorized domains, đưa file/domain chính xác cùng kết quả kiểm thử; tiếp tục công việc độc lập trong lúc chờ. Không tuyên bố tích hợp production hoàn tất khi các bước này chưa xong.
 
 Tự quyết các chi tiết triển khai thường lệ để hoàn thành sản phẩm; báo lại các quyết định ảnh hưởng dữ liệu, quyền hoặc vận hành. Không mở rộng sang thanh toán merchant, kho nguyên liệu, thuế hay kế toán nếu chưa được yêu cầu.
+
+Thực đơn riêng của từng cơ sở có thể lưu cùng ngày với món/giá khác nhau. Chỉ công bố thực đơn sang ngày khách sau khi quản trị liên kết đúng cơ sở. Quyền sở hữu bất biến, nhân sự chỉ được cấp cho tài khoản đã duyệt; tạm ngừng không tự chuyển người dùng về portal khách.

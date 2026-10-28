@@ -1,0 +1,14 @@
+import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import ts from 'typescript';
+import {themes,parseTheme} from '../lib/theme';import {english,translator} from '../lib/i18n';import {accountAccess,type Application} from '../lib/account';import {money} from '../lib/model';
+test('six selectable themes preserve Retro default and reject unknown cookie values',()=>{assert.equal(themes.length,6);assert.equal(parseTheme(undefined),'retro');for(const t of themes)assert.equal(parseTheme(t.id),t.id);assert.equal(parseTheme('<script>'),'retro');const css=fs.readFileSync('app/themes.css','utf8');for(const t of themes.filter(t=>t.id!=='retro'))assert.ok(css.includes('data-theme='+t.id));assert.ok(css.includes('prefers-reduced-motion'));});
+test('pending/rejected accounts see registration only; approved and legacy identities retain correct scope',()=>{
+ const app=(status:Application['status'])=>({id:'sample',status}) as Application,marker={id:'sample',merchantId:'sample',role:'owner' as const,enabled:true,accountOnly:true};
+ for(const status of ['pending','rejected'] as const){const value=accountAccess(false,null,app(status),false);assert.equal(value.canOperate,false);assert.equal(value.canCreate,false);}
+ assert.equal(accountAccess(false,marker,app('approved'),false).canCreate,true);assert.equal(accountAccess(false,marker,app('disabled'),false).canOperate,false);assert.equal(accountAccess(false,marker,app('approved'),true).canOperate,false);assert.equal(accountAccess(true,null,null,false).canCreate,true);
+ assert.equal(accountAccess(false,{...marker,enabled:false},app('approved'),false).canOperate,false);assert.equal(accountAccess(false,null,app('approved'),false).canCreate,false);
+});
+test('visible Vietnamese UI strings and SDK errors have English copy while entered menu content remains untouched',()=>{
+ const missing=new Set<string>();for(const file of ['app/dashboard.tsx','app/account-views.tsx','app/theme-provider.tsx','lib/theme.ts','lib/account.ts','lib/model.ts']){
+  const ast=ts.createSourceFile(file,fs.readFileSync(file,'utf8'),ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);function visit(n:ts.Node){if(ts.isStringLiteral(n)&&/[\u00c0-\u024f\u1e00-\u1eff]/u.test(n.text)&&!english[n.text])missing.add(n.text);ts.forEachChild(n,visit);}visit(ast);
+ }assert.deepEqual([...missing],[]);const t=translator('en');assert.equal(t('Đăng ký Merchant'),'Merchant registration');assert.equal(t('Cơm món riêng của khách'),'Cơm món riêng của khách');assert.notEqual(money(40000,'en'),money(40000,'vi'));assert.equal(translator('vi')('Đăng ký Merchant'),'Đăng ký Merchant');
+});

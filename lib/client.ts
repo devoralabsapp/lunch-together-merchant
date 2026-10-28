@@ -1,22 +1,25 @@
 import {collection,doc,getDoc,getDocs,query,where,orderBy,limit,onSnapshot,runTransaction,serverTimestamp,Timestamp,type DocumentData,type QueryDocumentSnapshot,type Unsubscribe} from 'firebase/firestore';
 import {firebase} from './firebase';
+import {accountAccess,type Access,type Application} from './account';
+export {emptyAccess} from './account';
+export type {Access} from './account';
 import {validDate,validMenu,dishId,orderFingerprint,canAdvance,type Merchant,type Dish,type Member,type Day,type Binding,type Order,type Fulfillment,type Activity,type State,type Role} from './model';
 const time=(v:unknown)=>{const t=v as {toDate?:()=>Date}|null;return t&&typeof t.toDate==='function'?t.toDate().toISOString():'';};
 const rows=<T>(snapshot:{docs:QueryDocumentSnapshot<DocumentData>[]})=>snapshot.docs.map(d=>({id:d.id,...d.data()}) as T);
 const actor=()=>{const u=firebase().auth.currentUser;if(!u||u.isAnonymous||!u.emailVerified)throw Error('Đăng nhập Google đã xác minh để tiếp tục.');return u.uid;};
 function event(merchantId:string,kind:string,message:string,dayId=''){const id=crypto.randomUUID().replaceAll('-','');return {ref:doc(firebase().db,'merchants',merchantId,'events',id),id,data:{kind,message,dayId,actorId:actor(),createdAt:serverTimestamp()}};}
-export function watchAccess(uid:string,callback:(v:{admin:boolean;member:Member|null})=>void,error:(e:unknown)=>void):Unsubscribe{
- let admin=false,member:Member|null=null,blocked=false;const db=firebase().db,ready=new Set<string>();
- const emit=(key:string)=>{ready.add(key);if(ready.size===3)callback({admin,member:blocked&&member?{...member,enabled:false}:member});};
- const a=onSnapshot(doc(db,'admins',uid),s=>{admin=s.data()?.enabled===true;emit('admin');},error);
- const b=onSnapshot(doc(db,'merchantUsers',uid),s=>{member=s.exists()?{id:s.id,...s.data()} as Member:null;emit('member');},error);
- const c=onSnapshot(doc(db,'userAccess',uid),s=>{blocked=s.data()?.blocked===true;emit('blocked');},error);
- return ()=>{a();b();c();};
+export function watchAccess(uid:string,callback:(v:Access)=>void,error:(e:unknown)=>void):Unsubscribe{
+ let admin=false,member:Member|null=null,application:Application|null=null,blocked=false;const db=firebase().db,ready=new Set<string>();const emit=(key:string)=>{ready.add(key);if(ready.size===4)callback(accountAccess(admin,member,application,blocked));};
+ const stops=[onSnapshot(doc(db,'admins',uid),s=>{admin=s.data()?.enabled===true;emit('admin');},error),onSnapshot(doc(db,'merchantUsers',uid),s=>{member=s.exists()?{id:s.id,...s.data()} as Member:null;emit('member');},error),onSnapshot(doc(db,'merchantApplications',uid),s=>{application=s.exists()?{id:s.id,...s.data()} as Application:null;emit('application');},error),onSnapshot(doc(db,'userAccess',uid),s=>{blocked=s.data()?.blocked===true||s.data()?.deleted===true;emit('blocked');},error)];return ()=>stops.forEach(stop=>stop());
 }
-export function watchMerchants(admin:boolean,member:Member|null,callback:(v:Merchant[])=>void,error:(e:unknown)=>void){
- const db=firebase().db;if(admin)return onSnapshot(collection(db,'merchants'),s=>callback(rows<Merchant>(s)),error);
- if(!member?.enabled){callback([]);return ()=>{};}return onSnapshot(doc(db,'merchants',member.merchantId),s=>callback(s.exists()?[{id:s.id,...s.data()} as Merchant]:[]),error);
+export function watchMerchants(access:Access,uid:string,callback:(v:Merchant[])=>void,error:(e:unknown)=>void){
+ const db=firebase().db;if(!access.canOperate){callback([]);return ()=>{};}if(access.admin)return onSnapshot(collection(db,'merchants'),s=>callback(rows<Merchant>(s)),error);
+ let own:Merchant[]=[],assigned=new Map<string,Merchant>(),grants:Member[]=[],stops=new Map<string,Unsubscribe>();const emit=()=>callback([...new Map([...own,...assigned.values()].map(m=>[m.id,m])).values()].sort((a,b)=>a.name.localeCompare(b.name,'vi')));
+ const refresh=()=>{const ids=new Set(grants.filter(g=>g.enabled).map(g=>g.merchantId));if(access.member?.enabled&&!access.member.accountOnly)ids.add(access.member.merchantId);for(const [id,stop] of stops)if(!ids.has(id)){stop();stops.delete(id);assigned.delete(id);}for(const id of ids)if(!stops.has(id))stops.set(id,onSnapshot(doc(db,'merchants',id),s=>{if(s.exists())assigned.set(id,{id:s.id,...s.data()} as Merchant);else assigned.delete(id);emit();},e=>{assigned.delete(id);emit();error(e);}));emit();};
+ const a=onSnapshot(query(collection(db,'merchants'),where('ownerId','==',uid)),s=>{own=rows<Merchant>(s);emit();},error);
+ const b=onSnapshot(query(collection(db,'merchantStoreUsers'),where('uid','==',uid)),s=>{grants=rows<Member>(s);refresh();},error);refresh();return ()=>{a();b();stops.forEach(stop=>stop());};
 }
+export function watchStoreRole(id:string,uid:string,callback:(role:Role|null|undefined)=>void,error:(e:unknown)=>void){return onSnapshot(doc(firebase().db,'merchantStoreUsers',id+'~'+uid),s=>callback(s.exists()?(s.data().enabled?s.data().role:null):undefined),error);}
 export function watchMerchant(id:string,callback:(v:{bindings?:Binding[];catalog?:Dish[];events?:Activity[]})=>void,error:(e:unknown)=>void){
  const db=firebase().db;
  const a=onSnapshot(query(collection(db,'merchantDays'),where('merchantId','==',id)),s=>callback({bindings:rows<Binding>(s).sort((a,b)=>b.date.localeCompare(a.date))}),error);
@@ -37,16 +40,11 @@ export function watchDay(id:string,callback:(v:{day?:Day|null;dishes?:Dish[];ord
  const d=onSnapshot(doc(db,'merchantFulfillments',id),s=>callback({fulfillment:s.exists()?{...s.data(),updatedAt:time(s.data().updatedAt)} as Fulfillment:null}),error);
  return ()=>{a();children.forEach(stop=>stop());d();};
 }
-export function watchStaff(id:string,callback:(v:Member[])=>void,error:(e:unknown)=>void){return onSnapshot(query(collection(firebase().db,'merchantUsers'),where('merchantId','==',id)),s=>callback(rows<Member>(s)),error);}
+export function watchStaff(id:string,callback:(v:Member[])=>void,error:(e:unknown)=>void){let old:Member[]=[],current:Member[]=[];const emit=()=>callback([...new Map([...old,...current].map(m=>[m.id,m])).values()]);const a=onSnapshot(query(collection(firebase().db,'merchantUsers'),where('merchantId','==',id)),s=>{old=rows<Member>(s).filter(m=>!m.accountOnly);emit();},error),b=onSnapshot(query(collection(firebase().db,'merchantStoreUsers'),where('merchantId','==',id)),s=>{current=s.docs.map(d=>({...d.data(),id:d.data().uid}) as Member);emit();},error);return ()=>{a();b();};}
 export async function createMerchant(name:string,ownerUid=''){
  if(!name.trim()||name.trim().length>100||ownerUid&&!/^[A-Za-z0-9_-]{1,128}$/.test(ownerUid))throw Error('Kiểm tra tên nhà hàng và UID chủ cửa hàng.');
- const {db}=firebase(),uid=actor(),id=crypto.randomUUID().replaceAll('-',''),e=event(id,'merchant.create','Tạo nhà hàng: '+name.trim());
- await runTransaction(db,async tx=>{
-  if(ownerUid){const member=await tx.get(doc(db,'merchantUsers',ownerUid));if(member.exists())throw Error('UID đã thuộc một nhà hàng. Quản trị hệ thống vẫn có thể quản lý mọi nhà hàng.');}
-  tx.set(doc(db,'merchants',id),{name:name.trim(),phone:'',address:'',active:true,createdAt:serverTimestamp(),createdBy:uid,updatedAt:serverTimestamp(),updatedBy:uid});
-  if(ownerUid)tx.set(doc(db,'merchantUsers',ownerUid),{merchantId:id,role:'owner',enabled:true,createdAt:serverTimestamp(),updatedAt:serverTimestamp(),updatedBy:uid});
-  tx.set(e.ref,e.data);
- });return id;
+ const {db}=firebase(),uid=actor(),id=crypto.randomUUID().replaceAll('-',''),ownerId=ownerUid||uid,e=event(id,'merchant.create','Tạo nhà hàng: '+name.trim());
+ await runTransaction(db,async tx=>{const member=ownerUid?await tx.get(doc(db,'merchantUsers',ownerUid)):null;tx.set(doc(db,'merchants',id),{name:name.trim(),phone:'',address:'',active:true,ownerId,createdAt:serverTimestamp(),createdBy:uid,updatedAt:serverTimestamp(),updatedBy:uid});if(ownerUid&&!member?.exists())tx.set(doc(db,'merchantUsers',ownerUid),{merchantId:id,role:'owner',enabled:true,createdAt:serverTimestamp(),updatedAt:serverTimestamp(),updatedBy:uid});tx.set(e.ref,e.data);});return id;
 }
 export async function saveMerchant(merchant:Merchant,input:{name:string;phone:string;address:string}){
  const {db}=firebase(),e=event(merchant.id,'merchant.update','Cập nhật thông tin nhà hàng');
@@ -85,6 +83,17 @@ export async function advance(merchantId:string,dayId:string,role:Role,to:State,
  });
 }
 export async function saveMember(merchantId:string,uid:string,role:Role,enabled:boolean){
- if(!/^[A-Za-z0-9_-]{1,128}$/.test(uid))throw Error('UID chưa hợp lệ.');const {db}=firebase(),ref=doc(db,'merchantUsers',uid),e=event(merchantId,'member.update','Cập nhật nhân sự '+uid.slice(0,8));
- await runTransaction(db,async tx=>{const s=await tx.get(ref);if(s.exists()&&s.data().merchantId!==merchantId)throw Error('UID đã thuộc một nhà hàng khác.');tx.set(ref,{merchantId,role,enabled,createdAt:s.data()?.createdAt||serverTimestamp(),updatedAt:serverTimestamp(),updatedBy:actor()});tx.set(e.ref,e.data);});
+ if(!/^[A-Za-z0-9_-]{1,128}$/.test(uid))throw Error('UID chưa hợp lệ.');const {db}=firebase(),ref=doc(db,'merchantStoreUsers',merchantId+'~'+uid),e=event(merchantId,'member.update','Cập nhật nhân sự '+uid.slice(0,8));
+ await runTransaction(db,async tx=>{const s=await tx.get(ref);tx.set(ref,{uid,merchantId,role,enabled,createdAt:s.data()?.createdAt||serverTimestamp(),updatedAt:serverTimestamp(),updatedBy:actor()});tx.set(e.ref,e.data);});
+}
+export function watchApplications(status:Application['status'],callback:(values:Application[])=>void,error:(e:unknown)=>void){return onSnapshot(query(collection(firebase().db,'merchantApplications'),where('status','==',status),limit(200)),s=>callback(rows<Application>(s)),error);}
+export async function saveApplication(input:{businessName:string;phone:string;note:string}){const {db}=firebase(),uid=actor();await runTransaction(db,async tx=>{const ref=doc(db,'merchantApplications',uid),old=await tx.get(ref);if(!old.exists())throw Error('Không tìm thấy hồ sơ đăng ký.');tx.update(ref,{businessName:input.businessName.trim(),phone:input.phone.trim(),note:input.note.trim(),status:'pending',reviewedBy:'',reviewedAt:null,reviewNote:'',reviewEventId:'',updatedAt:serverTimestamp()});});}
+export async function reviewApplication(application:Application,status:'approved'|'rejected'|'disabled',note:string){
+ const {db}=firebase(),uid=actor(),ref=doc(db,'merchantApplications',application.id),eventId=crypto.randomUUID().replaceAll('-','');
+ await runTransaction(db,async tx=>{const [old,member,state]=await Promise.all([tx.get(ref),tx.get(doc(db,'merchantUsers',application.id)),tx.get(doc(db,'userAccess',application.id))]);if(status==='approved'&&state.data()?.blocked===true)throw Error('Người dùng đang bị khóa. Mở lại tài khoản trước khi phê duyệt.');if(!old.exists()||time(old.data().updatedAt)!==time(application.updatedAt))throw Error('Hồ sơ vừa thay đổi. Vui lòng tải lại.');tx.update(ref,{status,reviewedBy:uid,reviewedAt:serverTimestamp(),reviewNote:note.trim(),reviewEventId:eventId,updatedAt:serverTimestamp()});if(status==='approved'||status==='disabled')tx.set(doc(db,'merchantUsers',application.id),member.exists()?{...member.data(),enabled:status==='approved',updatedAt:serverTimestamp(),updatedBy:uid}:{merchantId:application.id,role:'owner',enabled:status==='approved',accountOnly:true,createdAt:serverTimestamp(),updatedAt:serverTimestamp(),updatedBy:uid});tx.set(doc(db,'merchantApprovalEvents',eventId),{uid:application.id,status,actorId:uid,note:note.trim(),createdAt:serverTimestamp()});});
+}
+export async function readBranchMenu(merchantId:string,date:string){const {db}=firebase(),ref=doc(db,'merchants',merchantId,'menus',date),header=await getDoc(ref);if(!header.exists())return {revision:'',items:[] as Dish[]};const dishes=await getDocs(query(collection(ref,'dishes'),where('active','==',true)));return {revision:time(header.data().updatedAt),items:rows<Dish>(dishes)};}
+export async function saveBranchMenu(merchantId:string,date:string,items:Pick<Dish,'name'|'price'>[],expected:string){
+ if(!validDate(date))throw Error('Ngày chưa hợp lệ.');const menu=validMenu(items),{db}=firebase(),ref=doc(db,'merchants',merchantId,'menus',date),previous=await getDoc(ref),old=previous.exists()?await getDocs(query(collection(ref,'dishes'),where('active','==',true))):null,ids=await Promise.all(menu.map(i=>dishId(i.name))),e=event(merchantId,'branch.menu','Lưu thực đơn cơ sở '+date);
+ await runTransaction(db,async tx=>{const header=await tx.get(ref);if(time(header.data()?.updatedAt)!==expected)throw Error('Thực đơn vừa thay đổi ở thiết bị khác. Tải lại danh sách rồi thử lại.');tx.set(ref,{date,menuCount:menu.length,updatedAt:serverTimestamp(),updatedBy:actor()});for(const d of old?.docs||[])if(!ids.includes(d.id))tx.update(d.ref,{active:false,updatedAt:serverTimestamp()});menu.forEach((item,i)=>tx.set(doc(ref,'dishes',ids[i]),{...item,active:true,updatedAt:serverTimestamp()}));tx.set(e.ref,e.data);});
 }

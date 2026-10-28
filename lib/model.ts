@@ -1,8 +1,8 @@
 export type Role='owner'|'manager'|'kitchen';
 export const states=['accepted','cooking','ready','delivering','completed'] as const;
 export type State=typeof states[number];
-export type Member={id:string;merchantId:string;role:Role;enabled:boolean};
-export type Merchant={id:string;name:string;phone:string;address:string;active:boolean};
+export type Member={id:string;merchantId:string;role:Role;enabled:boolean;accountOnly?:boolean};
+export type Merchant={id:string;name:string;phone:string;address:string;active:boolean;ownerId?:string};
 export type Dish={id:string;name:string;price:number;active:boolean};
 export type Day={id:string;date:string;label:string;status:string;revision:string};
 export type Binding={id:string;merchantId:string;date:string};
@@ -11,7 +11,7 @@ export type Fulfillment={state:State;note:string;orderHash:string;updatedAt:stri
 export type Activity={id:string;kind:string;message:string;createdAt:string;actorId:string};
 export function today(){return new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Ho_Chi_Minh',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());}
 export function validDate(date:string){return /^\d{4}-\d{2}-\d{2}$/.test(date)&&Number.isFinite(Date.parse(date+'T00:00:00Z'))&&new Date(date+'T00:00:00Z').toISOString().slice(0,10)===date;}
-export const money=(n:number)=>new Intl.NumberFormat('vi-VN',{style:'currency',currency:'VND',maximumFractionDigits:0}).format(n);
+export const money=(n:number,locale:'vi'|'en'='vi')=>new Intl.NumberFormat(locale==='en'?'en-GB':'vi-VN',{style:'currency',currency:'VND',maximumFractionDigits:0}).format(n);
 export function validMenu(items:Pick<Dish,'name'|'price'>[]){
  items=items.map(i=>({...i,name:i.name.normalize('NFC').trim()}));
  if(items.length<1||items.length>60||items.some(i=>!i.name.trim()||i.name.trim().length>160||!Number.isInteger(i.price)||i.price<1000||i.price>1000000)||new Set(items.map(i=>i.name.trim().toLowerCase())).size!==items.length)throw new Error('Thực đơn cần 1–60 món, tên khác nhau và giá từ 1.000 đến 1.000.000 đ.');
