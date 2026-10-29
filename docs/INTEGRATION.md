@@ -67,3 +67,5 @@ merchantTeamUsers stores restaurant-wide grants; merchantEmailDirectory supports
 ## Closed-order dispatch
 
 See [closed-order dispatch](CLOSED-ORDER-DISPATCH.md): Merchant order reads and fulfillment writes require explicit customer-admin closure, and reopening is limited to 15 minutes from the first close. Deploy the shared Rules before updating both portals.
+
+Administrators can separately replace a restaurant after that deadline through the customer history editor. During replacement, kitchen release is suspended; completion archives the old fulfillment and starts a new cycle. See [restaurant replacement](RESTAURANT-REPLACEMENT.md).

@@ -34,7 +34,7 @@ export function watchMerchant(id:string,callback:(v:{bindings?:Binding[];catalog
 export function watchDay(id:string,callback:(v:{day?:Day|null;dishes?:Dish[];orders?:Order[];fulfillment?:Fulfillment|null})=>void,error:(e:unknown)=>void){
  const db=firebase().db;let children:Unsubscribe[]=[],ordersStop:Unsubscribe|undefined,ordersDispatch='',generation=0;
  const a=onSnapshot(doc(db,'days',id),s=>{
-  const day=s.exists()?{id:s.id,date:s.data().date,label:s.data().label,status:s.data().status,revision:time(s.data().updatedAt),closedAt:time(s.data().closedAt),dispatchId:s.data().dispatchId}:null;
+  const day=s.exists()?{id:s.id,date:s.data().date,label:s.data().label,status:s.data().status,revision:time(s.data().updatedAt),closedAt:time(s.data().closedAt),dispatchId:s.data().dispatchId,changing:s.data().changing===true}:null;
   callback({day});
   if(s.exists()&&!children.length)children=[
    onSnapshot(query(collection(db,'days',id,'dishes'),where('active','==',true)),v=>callback({dishes:rows<Dish>(v)}),error),
@@ -87,7 +87,7 @@ export async function advance(merchantId:string,dayId:string,role:Role,to:State,
  await runTransaction(db,async tx=>{
   const [s,b,day]=await Promise.all([tx.get(ref),tx.get(doc(db,'merchantDays',dayId)),tx.get(doc(db,'days',dayId))]);
   if(b.data()?.merchantId!==merchantId)throw Error('Ngày không thuộc nhà hàng này.');
-  if(!day.exists()||day.data().status!=='closed'||!day.data().closedAt||!day.data().dispatchId)throw Error('Chờ quản trị Cơm Nhà chốt đơn trước khi nhận danh sách.');
+  if(!day.exists()||day.data().status!=='closed'||day.data().changing===true||!day.data().closedAt||!day.data().dispatchId)throw Error('Chờ quản trị Cơm Nhà chốt đơn trước khi nhận danh sách.');
   const dispatchId=day.data().dispatchId,sameDispatch=s.data()?.dispatchId===dispatchId;
   const from=sameDispatch?s.data()?.state||'new':'new',changed=sameDispatch&&!!s.exists()&&s.data()?.orderHash!==hash;
   if(!canAdvance(role,from,to,changed)||(changed&&to!=='accepted'))throw Error('Đơn đã thay đổi hoặc trạng thái không hợp lệ. Kiểm tra lại và xác nhận danh sách mới.');
