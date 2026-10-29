@@ -1,5 +1,6 @@
 import {collection,doc,getDoc,getDocs,query,where,orderBy,limit,onSnapshot,runTransaction,serverTimestamp,Timestamp,type DocumentData,type QueryDocumentSnapshot,type Unsubscribe} from 'firebase/firestore';
 import {firebase} from './firebase';
+import {released} from './dispatch';
 import {accountAccess,type Access,type Application} from './account';
 export {emptyAccess} from './account';
 export type {Access} from './account';
@@ -31,17 +32,19 @@ export function watchMerchant(id:string,callback:(v:{bindings?:Binding[];catalog
  return ()=>{a();c();};
 }
 export function watchDay(id:string,callback:(v:{day?:Day|null;dishes?:Dish[];orders?:Order[];fulfillment?:Fulfillment|null})=>void,error:(e:unknown)=>void){
- const db=firebase().db;let children:Unsubscribe[]=[];
+ const db=firebase().db;let children:Unsubscribe[]=[],ordersStop:Unsubscribe|undefined,ordersDispatch='',generation=0;
  const a=onSnapshot(doc(db,'days',id),s=>{
-  callback({day:s.exists()?{id:s.id,date:s.data().date,label:s.data().label,status:s.data().status,revision:time(s.data().updatedAt)}:null});
+  const day=s.exists()?{id:s.id,date:s.data().date,label:s.data().label,status:s.data().status,revision:time(s.data().updatedAt),closedAt:time(s.data().closedAt),dispatchId:s.data().dispatchId}:null;
+  callback({day});
   if(s.exists()&&!children.length)children=[
    onSnapshot(query(collection(db,'days',id,'dishes'),where('active','==',true)),v=>callback({dishes:rows<Dish>(v)}),error),
-   onSnapshot(collection(db,'days',id,'orders'),v=>callback({orders:v.docs.map(d=>({id:d.id,dish:d.data().dish,quantity:d.data().quantity,price:d.data().price,note:d.data().note||'',cancelled:d.data().cancelled===true,updatedAt:time(d.data().updatedAt)}))}),error),
   ];
   if(!s.exists()){children.forEach(stop=>stop());children=[];callback({dishes:[],orders:[]});}
+  if(!released(day)||ordersDispatch!==day?.dispatchId){ordersStop?.();ordersStop=undefined;ordersDispatch='';generation++;callback({orders:[]});}
+  if(released(day)&&!ordersStop){ordersDispatch=day!.dispatchId!;const version=generation;ordersStop=onSnapshot(collection(db,'days',id,'orders'),v=>{if(version===generation)callback({orders:v.docs.map(d=>({id:d.id,dish:d.data().dish,quantity:d.data().quantity,price:d.data().price,note:d.data().note||'',cancelled:d.data().cancelled===true,updatedAt:time(d.data().updatedAt)}))});},e=>{if(version===generation){callback({orders:[]});error(e);}});}
  },error);
  const d=onSnapshot(doc(db,'merchantFulfillments',id),s=>callback({fulfillment:s.exists()?{...s.data(),updatedAt:time(s.data().updatedAt)} as Fulfillment:null}),error);
- return ()=>{a();children.forEach(stop=>stop());d();};
+ return ()=>{generation++;a();children.forEach(stop=>stop());ordersStop?.();d();};
 }
 export function watchStaff(id:string,callback:(v:Member[])=>void,error:(e:unknown)=>void){let old:Member[]=[],current:Member[]=[];const emit=()=>callback([...new Map([...old,...current].map(m=>[m.id,m])).values()]);const a=onSnapshot(query(collection(firebase().db,'merchantUsers'),where('merchantId','==',id)),s=>{old=rows<Member>(s).filter(m=>!m.accountOnly);emit();},error),b=onSnapshot(query(collection(firebase().db,'merchantStoreUsers'),where('merchantId','==',id)),s=>{current=s.docs.map(d=>({...d.data(),id:d.data().uid}) as Member);emit();},error);return ()=>{a();b();};}
 export async function createMerchant(name:string,ownerUid=''){
@@ -82,11 +85,13 @@ export async function advance(merchantId:string,dayId:string,role:Role,to:State,
  if(note.length>300)throw Error('Ghi chú tối đa 300 ký tự.');if(!orders.some(o=>!o.cancelled)&&!(to==='accepted'&&orders.length))throw Error('Chưa có đơn đang hiệu lực.');
  const {db}=firebase(),hash=await orderFingerprint(orders),ref=doc(db,'merchantFulfillments',dayId),e=event(merchantId,'status.change','Chuyển trạng thái: '+to,dayId);
  await runTransaction(db,async tx=>{
-  const [s,b]=await Promise.all([tx.get(ref),tx.get(doc(db,'merchantDays',dayId))]);
+  const [s,b,day]=await Promise.all([tx.get(ref),tx.get(doc(db,'merchantDays',dayId)),tx.get(doc(db,'days',dayId))]);
   if(b.data()?.merchantId!==merchantId)throw Error('Ngày không thuộc nhà hàng này.');
-  const from=s.data()?.state||'new',changed=!!s.exists()&&s.data()?.orderHash!==hash;
+  if(!day.exists()||day.data().status!=='closed'||!day.data().closedAt||!day.data().dispatchId)throw Error('Chờ quản trị Cơm Nhà chốt đơn trước khi nhận danh sách.');
+  const dispatchId=day.data().dispatchId,sameDispatch=s.data()?.dispatchId===dispatchId;
+  const from=sameDispatch?s.data()?.state||'new':'new',changed=sameDispatch&&!!s.exists()&&s.data()?.orderHash!==hash;
   if(!canAdvance(role,from,to,changed)||(changed&&to!=='accepted'))throw Error('Đơn đã thay đổi hoặc trạng thái không hợp lệ. Kiểm tra lại và xác nhận danh sách mới.');
-  tx.set(ref,{merchantId,date:b.data()!.date,state:to,note:note.trim(),orderHash:hash,lastEventId:e.id,createdAt:s.data()?.createdAt||serverTimestamp(),updatedAt:serverTimestamp(),updatedBy:actor()});tx.set(e.ref,e.data);
+  tx.set(ref,{merchantId,date:b.data()!.date,state:to,note:note.trim(),orderHash:hash,dispatchId,lastEventId:e.id,createdAt:s.data()?.createdAt||serverTimestamp(),updatedAt:serverTimestamp(),updatedBy:actor()});tx.set(e.ref,e.data);
  });
 }
 export async function saveMember(merchantId:string,uid:string,role:Role,enabled:boolean){
